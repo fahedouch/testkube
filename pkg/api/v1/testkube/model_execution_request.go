@@ -13,6 +13,8 @@ package testkube
 type ExecutionRequest struct {
 	// test execution custom name
 	Name string `json:"name,omitempty"`
+	// test execution number
+	Number int `json:"number,omitempty"`
 	// test kubernetes namespace (\"testkube\" when not set)
 	Namespace string `json:"namespace,omitempty"`
 	// variables file content - need to be in format for particular executor (e.g. postman envs file)
