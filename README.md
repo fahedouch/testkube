@@ -21,6 +21,7 @@
 <p align="center">
   <a href="https://github.com/kubeshop/testkube/releases"><img title="Release" src="https://img.shields.io/github/v/release/kubeshop/testkube"/></a>
   <a href=""><img title="Downloads" src="https://img.shields.io/github/downloads/kubeshop/testkube/total.svg"/></a>
+<a href="https://app.fossa.com/projects/git%2Bgithub.com%2Ffahedouch%2Ftestkube?ref=badge_shield" alt="FOSSA Status"><img src="https://app.fossa.com/api/projects/git%2Bgithub.com%2Ffahedouch%2Ftestkube.svg?type=shield"/></a>
   <a href=""><img title="Go version" src="https://img.shields.io/github/go-mod/go-version/kubeshop/testkube"/></a>
   <a href=""><img title="Docker builds" src="https://img.shields.io/docker/automated/kubeshop/testkube-api-server"/></a>
   <a href=""><img title="Code builds" src="https://img.shields.io/github/workflow/status/kubeshop/testkube/Code%20build%20and%20checks"/></a>
@@ -102,3 +103,7 @@ Go to [contribution document](CONTRIBUTING.md) to read more how can you help us 
 # Feedback
 Whether it helps you or not - we'd LOVE to hear from you.  Please let us know what you think and of course, how we can make it better.
 Please join our growing community on [Discord](https://discord.com/invite/6zupCZFQbe).
+
+
+## License
+[![FOSSA Status](https://app.fossa.com/api/projects/git%2Bgithub.com%2Ffahedouch%2Ftestkube.svg?type=large)](https://app.fossa.com/projects/git%2Bgithub.com%2Ffahedouch%2Ftestkube?ref=badge_large)
