@@ -15,22 +15,28 @@ func NewTestSuiteClient(
 	testSuiteTransport Transport[testkube.TestSuite],
 	testSuiteExecutionTransport Transport[testkube.TestSuiteExecution],
 	testSuiteWithExecutionTransport Transport[testkube.TestSuiteWithExecution],
+	testSuiteWithExecutionSummaryTransport Transport[testkube.TestSuiteWithExecutionSummary],
 	testSuiteExecutionsResultTransport Transport[testkube.TestSuiteExecutionsResult],
+	testSuiteArtifactTransport Transport[testkube.Artifact],
 ) TestSuiteClient {
 	return TestSuiteClient{
-		testSuiteTransport:                 testSuiteTransport,
-		testSuiteExecutionTransport:        testSuiteExecutionTransport,
-		testSuiteWithExecutionTransport:    testSuiteWithExecutionTransport,
-		testSuiteExecutionsResultTransport: testSuiteExecutionsResultTransport,
+		testSuiteTransport:                     testSuiteTransport,
+		testSuiteExecutionTransport:            testSuiteExecutionTransport,
+		testSuiteWithExecutionTransport:        testSuiteWithExecutionTransport,
+		testSuiteWithExecutionSummaryTransport: testSuiteWithExecutionSummaryTransport,
+		testSuiteExecutionsResultTransport:     testSuiteExecutionsResultTransport,
+		testSuiteArtifactTransport:             testSuiteArtifactTransport,
 	}
 }
 
 // TestSuiteClient is a client for test suites
 type TestSuiteClient struct {
-	testSuiteTransport                 Transport[testkube.TestSuite]
-	testSuiteExecutionTransport        Transport[testkube.TestSuiteExecution]
-	testSuiteWithExecutionTransport    Transport[testkube.TestSuiteWithExecution]
-	testSuiteExecutionsResultTransport Transport[testkube.TestSuiteExecutionsResult]
+	testSuiteTransport                     Transport[testkube.TestSuite]
+	testSuiteExecutionTransport            Transport[testkube.TestSuiteExecution]
+	testSuiteWithExecutionTransport        Transport[testkube.TestSuiteWithExecution]
+	testSuiteWithExecutionSummaryTransport Transport[testkube.TestSuiteWithExecutionSummary]
+	testSuiteExecutionsResultTransport     Transport[testkube.TestSuiteExecutionsResult]
+	testSuiteArtifactTransport             Transport[testkube.Artifact]
 }
 
 // GetTestSuite returns single test suite by id
@@ -39,7 +45,7 @@ func (c TestSuiteClient) GetTestSuite(id string) (testSuite testkube.TestSuite, 
 	return c.testSuiteTransport.Execute(http.MethodGet, uri, nil, nil)
 }
 
-// GetTestSuitWithExecution returns single test suite by id with execution
+// GetTestSuiteWithExecution returns single test suite by id with execution
 func (c TestSuiteClient) GetTestSuiteWithExecution(id string) (test testkube.TestSuiteWithExecution, err error) {
 	uri := c.testSuiteWithExecutionTransport.GetURI("/test-suite-with-executions/%s", id)
 	return c.testSuiteWithExecutionTransport.Execute(http.MethodGet, uri, nil, nil)
@@ -55,15 +61,15 @@ func (c TestSuiteClient) ListTestSuites(selector string) (testSuites testkube.Te
 	return c.testSuiteTransport.ExecuteMultiple(http.MethodGet, uri, nil, params)
 }
 
-// ListTestSuiteWithExecutions list all test suite with executions
-func (c TestSuiteClient) ListTestSuiteWithExecutions(selector string) (
-	testSuiteWithExecutions testkube.TestSuiteWithExecutions, err error) {
-	uri := c.testSuiteWithExecutionTransport.GetURI("/test-suite-with-executions")
+// ListTestSuiteWithExecutionSummaries list all test suite with execution summaries
+func (c TestSuiteClient) ListTestSuiteWithExecutionSummaries(selector string) (
+	testSuiteWithExecutionSummaries testkube.TestSuiteWithExecutionSummaries, err error) {
+	uri := c.testSuiteWithExecutionSummaryTransport.GetURI("/test-suite-with-executions")
 	params := map[string]string{
 		"selector": selector,
 	}
 
-	return c.testSuiteWithExecutionTransport.ExecuteMultiple(http.MethodGet, uri, nil, params)
+	return c.testSuiteWithExecutionSummaryTransport.ExecuteMultiple(http.MethodGet, uri, nil, params)
 }
 
 // CreateTestSuite creates new TestSuite Custom Resource
@@ -80,9 +86,14 @@ func (c TestSuiteClient) CreateTestSuite(options UpsertTestSuiteOptions) (testSu
 }
 
 // UpdateTestSuite updates TestSuite Custom Resource
-func (c TestSuiteClient) UpdateTestSuite(options UpsertTestSuiteOptions) (testSuite testkube.TestSuite, err error) {
-	uri := c.testSuiteTransport.GetURI("/test-suites/%s", options.Name)
-	request := testkube.TestSuiteUpsertRequest(options)
+func (c TestSuiteClient) UpdateTestSuite(options UpdateTestSuiteOptions) (testSuite testkube.TestSuite, err error) {
+	name := ""
+	if options.Name != nil {
+		name = *options.Name
+	}
+
+	uri := c.testSuiteTransport.GetURI("/test-suites/%s", name)
+	request := testkube.TestSuiteUpdateRequest(options)
 
 	body, err := json.Marshal(request)
 	if err != nil {
@@ -114,15 +125,44 @@ func (c TestSuiteClient) GetTestSuiteExecution(executionID string) (execution te
 	return c.testSuiteExecutionTransport.Execute(http.MethodGet, uri, nil, nil)
 }
 
+// AbortTestSuiteExecution aborts a test suite execution
+func (c TestSuiteClient) AbortTestSuiteExecution(executionID string) error {
+	uri := c.testSuiteExecutionTransport.GetURI("/test-suite-executions/%s", executionID)
+	return c.testSuiteExecutionTransport.ExecuteMethod(http.MethodPatch, uri, "", false)
+}
+
+// AbortTestSuiteExecutions aborts all test suite executions
+func (c TestSuiteClient) AbortTestSuiteExecutions(testSuiteName string) error {
+	uri := c.testSuiteExecutionTransport.GetURI("/test-suites/%s/abort", testSuiteName)
+	return c.testSuiteExecutionTransport.ExecuteMethod(http.MethodPost, uri, "", false)
+}
+
+// GetTestSuiteExecutionArtifacts returns test suite execution artifacts by excution id
+func (c TestSuiteClient) GetTestSuiteExecutionArtifacts(executionID string) (artifacts testkube.Artifacts, err error) {
+	uri := c.testSuiteArtifactTransport.GetURI("/test-suite-executions/%s/artifacts", executionID)
+	return c.testSuiteArtifactTransport.ExecuteMultiple(http.MethodGet, uri, nil, nil)
+}
+
 // ExecuteTestSuite starts new external test suite execution, reads data and returns ID
 // Execution is started asynchronously client can check later for results
 func (c TestSuiteClient) ExecuteTestSuite(id, executionName string, options ExecuteTestSuiteOptions) (execution testkube.TestSuiteExecution, err error) {
 	uri := c.testSuiteExecutionTransport.GetURI("/test-suites/%s/executions", id)
 	executionRequest := testkube.TestSuiteExecutionRequest{
-		Name:       executionName,
-		Variables:  options.ExecutionVariables,
-		HttpProxy:  options.HTTPProxy,
-		HttpsProxy: options.HTTPSProxy,
+		Name:                     executionName,
+		Variables:                options.ExecutionVariables,
+		HttpProxy:                options.HTTPProxy,
+		HttpsProxy:               options.HTTPSProxy,
+		ExecutionLabels:          options.ExecutionLabels,
+		ContentRequest:           options.ContentRequest,
+		RunningContext:           options.RunningContext,
+		ConcurrencyLevel:         options.ConcurrencyLevel,
+		JobTemplate:              options.JobTemplate,
+		JobTemplateReference:     options.JobTemplateReference,
+		ScraperTemplate:          options.ScraperTemplate,
+		ScraperTemplateReference: options.ScraperTemplateReference,
+		PvcTemplate:              options.PvcTemplate,
+		PvcTemplateReference:     options.PvcTemplateReference,
+		DisableWebhooks:          options.DisableWebhooks,
 	}
 
 	body, err := json.Marshal(executionRequest)
@@ -138,9 +178,20 @@ func (c TestSuiteClient) ExecuteTestSuite(id, executionName string, options Exec
 func (c TestSuiteClient) ExecuteTestSuites(selector string, concurrencyLevel int, options ExecuteTestSuiteOptions) (executions []testkube.TestSuiteExecution, err error) {
 	uri := c.testSuiteExecutionTransport.GetURI("/test-suite-executions")
 	executionRequest := testkube.TestSuiteExecutionRequest{
-		Variables:  options.ExecutionVariables,
-		HttpProxy:  options.HTTPProxy,
-		HttpsProxy: options.HTTPSProxy,
+		Variables:                options.ExecutionVariables,
+		HttpProxy:                options.HTTPProxy,
+		HttpsProxy:               options.HTTPSProxy,
+		ExecutionLabels:          options.ExecutionLabels,
+		ContentRequest:           options.ContentRequest,
+		RunningContext:           options.RunningContext,
+		ConcurrencyLevel:         options.ConcurrencyLevel,
+		JobTemplate:              options.JobTemplate,
+		JobTemplateReference:     options.JobTemplateReference,
+		ScraperTemplate:          options.ScraperTemplate,
+		ScraperTemplateReference: options.ScraperTemplateReference,
+		PvcTemplate:              options.PvcTemplate,
+		PvcTemplateReference:     options.PvcTemplateReference,
+		DisableWebhooks:          options.DisableWebhooks,
 	}
 
 	body, err := json.Marshal(executionRequest)
@@ -157,33 +208,46 @@ func (c TestSuiteClient) ExecuteTestSuites(selector string, concurrencyLevel int
 }
 
 // WatchTestSuiteExecution watches for changes in channels of test suite executions steps
-func (c TestSuiteClient) WatchTestSuiteExecution(executionID string) (executionCh chan testkube.TestSuiteExecution, err error) {
-	executionCh = make(chan testkube.TestSuiteExecution)
+func (c TestSuiteClient) WatchTestSuiteExecution(executionID string) (respCh chan testkube.WatchTestSuiteExecutionResponse) {
+	respCh = make(chan testkube.WatchTestSuiteExecutionResponse)
 
 	go func() {
+		defer close(respCh)
+
 		execution, err := c.GetTestSuiteExecution(executionID)
 		if err != nil {
-			close(executionCh)
+			respCh <- testkube.WatchTestSuiteExecutionResponse{
+				Error: err,
+			}
 			return
 		}
 
-		executionCh <- execution
+		respCh <- testkube.WatchTestSuiteExecutionResponse{
+			Execution: execution,
+		}
+
 		for range time.NewTicker(time.Second).C {
 			execution, err = c.GetTestSuiteExecution(executionID)
 			if err != nil {
-				close(executionCh)
+				respCh <- testkube.WatchTestSuiteExecutionResponse{
+					Error: err,
+				}
 				return
 			}
 
 			if execution.IsCompleted() {
-				close(executionCh)
+				respCh <- testkube.WatchTestSuiteExecutionResponse{
+					Execution: execution,
+				}
 				return
 			}
 
-			executionCh <- execution
+			respCh <- testkube.WatchTestSuiteExecutionResponse{
+				Execution: execution,
+			}
 		}
 	}()
-	return
+	return respCh
 }
 
 // ListTestSuiteExecutions list all executions for given test suite

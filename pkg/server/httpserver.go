@@ -1,20 +1,24 @@
 package server
 
 import (
-	"encoding/json"
+	"context"
+	"net"
 
 	"github.com/gofiber/adaptor/v2"
 	"github.com/gofiber/fiber/v2"
-	"github.com/kubeshop/testkube/pkg/log"
-	"github.com/kubeshop/testkube/pkg/problem"
+	"github.com/gofiber/fiber/v2/middleware/pprof"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"go.uber.org/zap"
+
+	"github.com/kubeshop/testkube/pkg/log"
 )
 
 // NewServer returns new HTTP server instance, initializes logger and metrics
 func NewServer(config Config) HTTPServer {
+	config.Http.DisableStartupMessage = true
+
 	s := HTTPServer{
-		Mux:    fiber.New(),
+		Mux:    fiber.New(config.Http),
 		Log:    log.DefaultLogger,
 		Config: config,
 	}
@@ -40,6 +44,8 @@ func (s *HTTPServer) Init() {
 		return c.Next()
 	})
 
+	s.Mux.Use(pprof.New())
+
 	// server generic endpoints
 	s.Mux.Get("/health", s.HealthEndpoint())
 	s.Mux.Get("/metrics", adaptor.HTTPHandler(promhttp.Handler()))
@@ -52,38 +58,38 @@ func (s *HTTPServer) Init() {
 
 }
 
-// Warn writes RFC-7807 json problem to response
-func (s *HTTPServer) Warn(c *fiber.Ctx, status int, err error, context ...interface{}) error {
-	c.Status(status)
-	c.Response().Header.Set("Content-Type", "application/problem+json")
-	s.Log.Warnw(err.Error(), "status", status)
-	pr := problem.New(status, s.getProblemMessage(err, context))
-	return c.JSON(pr)
-}
+// RoutesHandler is a handler to get existing routes
+func (s *HTTPServer) RoutesHandler() fiber.Handler {
+	return func(c *fiber.Ctx) error {
+		var routes []fiber.Route
 
-// Error writes RFC-7807 json problem to response
-func (s *HTTPServer) Error(c *fiber.Ctx, status int, err error, context ...interface{}) error {
-	c.Status(status)
-	c.Response().Header.Set("Content-Type", "application/problem+json")
-	s.Log.Errorw(err.Error(), "status", status)
-	pr := problem.New(status, s.getProblemMessage(err, context))
-	return c.JSON(pr)
-}
-
-// getProblemMessage creates new JSON based problem message and returns it as string
-func (s *HTTPServer) getProblemMessage(err error, context ...interface{}) string {
-	message := err.Error()
-	if len(context) > 0 {
-		b, err := json.Marshal(context[0])
-		if err == nil {
-			message += ", context: " + string(b)
+		stack := s.Mux.Stack()
+		for _, e := range stack {
+			for _, s := range e {
+				route := *s
+				routes = append(routes, route)
+			}
 		}
-	}
 
-	return message
+		return c.JSON(routes)
+	}
 }
 
 // Run starts listening for incoming connetions
-func (s HTTPServer) Run() error {
-	return s.Mux.Listen(s.Config.Addr())
+func (s *HTTPServer) Run(ctx context.Context) error {
+	// Use basic routes
+	s.Routes.Get("/routes", s.RoutesHandler())
+
+	// Start server
+	l, err := net.Listen("tcp", s.Config.Addr())
+	if err != nil {
+		return err
+	}
+	// this function listens for finished context and calls graceful shutdown on the API server
+	go func() {
+		<-ctx.Done()
+		s.Log.Infof("shutting down Testkube API server")
+		_ = s.Mux.Shutdown()
+	}()
+	return s.Mux.Listener(l)
 }

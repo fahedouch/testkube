@@ -13,7 +13,9 @@ var TestSuiteExecutionStatusFailed = TestSuiteExecutionStatusPtr(FAILED_TestSuit
 var TestSuiteExecutionStatusPassed = TestSuiteExecutionStatusPtr(PASSED_TestSuiteExecutionStatus)
 var TestSuiteExecutionStatusQueued = TestSuiteExecutionStatusPtr(QUEUED_TestSuiteExecutionStatus)
 var TestSuiteExecutionStatusRunning = TestSuiteExecutionStatusPtr(RUNNING_TestSuiteExecutionStatus)
-var TestSuiteExecutionStatusCancelled = TestSuiteExecutionStatusPtr(CANCELLED_TestSuiteExecutionStatus)
+var TestSuiteExecutionStatusAborting = TestSuiteExecutionStatusPtr(ABORTING_TestSuiteExecutionStatus)
+var TestSuiteExecutionStatusAborted = TestSuiteExecutionStatusPtr(ABORTED_TestSuiteExecutionStatus)
+var TestSuiteExecutionStatusTimeout = TestSuiteExecutionStatusPtr(TIMEOUT_TestSuiteExecutionStatus)
 
 // TestSuiteExecutionStatuses is an array of TestSuiteExecutionStatus
 type TestSuiteExecutionStatuses []TestSuiteExecutionStatus
@@ -52,4 +54,8 @@ func ParseTestSuiteExecutionStatusList(source, separator string) (statusList Tes
 	}
 
 	return statusList, nil
+}
+
+func TestSuiteExecutionStatusString(ptr *TestSuiteExecutionStatus) string {
+	return string(*ptr)
 }

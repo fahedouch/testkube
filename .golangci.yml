@@ -1,5 +1,9 @@
 # .golangci.yml
 
+run:
+  build-tags:
+    - integration
+
 linters:
   disable-all: true
   enable:
@@ -7,12 +11,15 @@ linters:
     - revive
     - govet
     - unused
+    - staticcheck
 
 linters-settings:
   govet:
     check-shadowing: false
   revive:
     ignore-generated-header: true
+  goimports:
+    local-prefixes: github.com/kubeshop/testkube
 
 issues:
   exclude-use-default: false

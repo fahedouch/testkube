@@ -17,11 +17,33 @@ func NewBasicVariable(name, value string) Variable {
 	}
 }
 
+func NewConfigMapVariableReference(name, configMap, key string) Variable {
+	return Variable{
+		Name:  name,
+		Type_: VariableTypeBasic,
+		ConfigMapRef: &ConfigMapRef{
+			Name: configMap,
+			Key:  key,
+		},
+	}
+}
+
 func NewSecretVariable(name, value string) Variable {
 	return Variable{
 		Name:  name,
 		Value: value,
 		Type_: VariableTypeSecret,
+	}
+}
+
+func NewSecretVariableReference(name, secret, key string) Variable {
+	return Variable{
+		Name:  name,
+		Type_: VariableTypeSecret,
+		SecretRef: &SecretRef{
+			Name: secret,
+			Key:  key,
+		},
 	}
 }
 

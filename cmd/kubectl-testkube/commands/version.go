@@ -1,10 +1,12 @@
 package commands
 
 import (
+	"github.com/spf13/cobra"
+
 	"github.com/kubeshop/testkube/cmd/kubectl-testkube/commands/common"
 	"github.com/kubeshop/testkube/cmd/kubectl-testkube/commands/common/validator"
+	"github.com/kubeshop/testkube/cmd/kubectl-testkube/config"
 	"github.com/kubeshop/testkube/pkg/ui"
-	"github.com/spf13/cobra"
 )
 
 func NewVersionCmd() *cobra.Command {
@@ -14,22 +16,28 @@ func NewVersionCmd() *cobra.Command {
 		Short:   "Shows version and build info",
 		Long:    `Shows version and build info`,
 		Run: func(cmd *cobra.Command, args []string) {
-			client, _ := common.GetClient(cmd)
+			client, _, err := common.GetClient(cmd)
+			ui.ExitOnError("getting client", err)
+
 			info, err := client.GetServerInfo()
 			if err != nil {
 				info.Version = info.Version + " " + err.Error()
 			}
 
 			ui.Logo()
-			ui.Info("Client Version", Version)
+			ui.Info("Client Version", common.Version)
 			ui.Info("Server Version", info.Version)
-			ui.Info("Commit", Commit)
-			ui.Info("Built by", BuiltBy)
-			ui.Info("Build date", Date)
+			ui.Info("Commit", common.Commit)
+			ui.Info("Built by", common.BuiltBy)
+			ui.Info("Build date", common.Date)
 
 		},
 		PersistentPreRun: func(cmd *cobra.Command, args []string) {
-			validator.PersistentPreRunVersionCheck(cmd, Version)
+			cfg, err := config.Load()
+			ui.ExitOnError("loading config", err)
+			common.UiContextHeader(cmd, cfg)
+
+			validator.PersistentPreRunVersionCheck(cmd, common.Version)
 		},
 	}
 }

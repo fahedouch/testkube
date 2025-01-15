@@ -1,3 +1,4 @@
+version: 2
 builds:
   - builder: prebuilt
     goos:
@@ -11,23 +12,70 @@ builds:
     goamd64:
       - v1
     prebuilt:
-      path: '{{ .Os }}/testkube_{{ .Os }}_{{ .Arch }}{{ with .Amd64 }}_{{ . }}{{ end }}/kubectl-testkube{{ .Ext }}'
+      path: "{{ .Os }}/testkube_{{ .Os }}_{{ .Arch }}{{ with .Amd64 }}_{{ . }}{{ end }}/kubectl-testkube{{ .Ext }}"
     binary: kubectl-testkube
 archives:
-  - replacements:
-      darwin: macOS
-      linux: Linux
-      windows: Windows
-      386: i386
-      amd64: x86_64
+  - id: testkube
+    name_template: >-
+      {{ .ProjectName }}_{{.Version}}_
+      {{- title .Os }}_
+      {{- if eq .Arch "amd64" }}x86_64
+      {{- else if eq .Arch "386" }}i386
+      {{- else }}{{ .Arch }}{{ end }}
 checksum:
   name_template: "checksums.txt"
+
+sboms:
+  - artifacts: archive
+  - id: source
+    artifacts: source
+
+signs:
+  - cmd: cosign
+    certificate: '${artifact}.pem'
+    args:
+      - sign-blob
+      - '--output-certificate=${certificate}'
+      - '--output-signature=${signature}'
+      - '${artifact}'
+      - "--yes"
+    artifacts: all
+    output: true
+
 changelog:
   sort: asc
+  use: github
   filters:
     exclude:
-      - "^docs:"
-      - "^test:"
+      - '^test:'
+      - '^chore'
+      - 'merge conflict'
+      - Merge pull request
+      - Merge remote-tracking branch
+      - Merge branch
+      - go mod tidy
+  groups:
+    - title: Dependency updates
+      regexp: '^.*?(feat|fix)\(deps\)!?:.+$'
+      order: 300
+    - title: 'New Features'
+      regexp: '^.*?feat(\([[:word:]]+\))??!?:.+$'
+      order: 100
+    - title: 'Security updates'
+      regexp: '^.*?sec(\([[:word:]]+\))??!?:.+$'
+      order: 150
+    - title: 'Bug fixes'
+      regexp: '^.*?fix(\([[:word:]]+\))??!?:.+$'
+      order: 200
+    - title: 'Documentation updates'
+      regexp: ^.*?doc(\([[:word:]]+\))??!?:.+$
+      order: 400
+    - title: 'Build process updates'
+      regexp: ^.*?build(\([[:word:]]+\))??!?:.+$
+      order: 400
+    - title: Other work
+      order: 9999
+
 release:
   # Create a thread in the General category in the repo's discussion tab.
   discussion_category_name: General
@@ -37,15 +85,30 @@ release:
   prerelease: auto
 
 brews:
-  - tap:
+  - repository:
       owner: kubeshop
       name: homebrew-testkube
     description: Testkube - your somewhat opinionated and friendly Kubernetes testing framework!
     homepage: https://testkube.io
     license: "MIT"
+    dependencies:
+      - name: helm
+      - name: kubectl
+    install: |
+      bin.install "kubectl-testkube"
+      ln_s bin/"kubectl-testkube", bin/"tk"
+      ln_s bin/"kubectl-testkube", bin/"testkube"
+
 nfpms:
   - maintainer: Testkube team
     license: "MIT"
     formats:
       - deb
     description: Testkube - your somewhat opinionated and friendly Kubernetes testing framework!
+    contents:
+      - src: /usr/bin/kubectl-testkube
+        dst: /usr/bin/tk
+        type: "symlink"
+      - src: /usr/bin/kubectl-testkube
+        dst: /usr/bin/testkube
+        type: "symlink"

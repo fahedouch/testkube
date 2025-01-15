@@ -3,9 +3,10 @@ package tests
 import (
 	"strings"
 
+	"github.com/spf13/cobra"
+
 	"github.com/kubeshop/testkube/cmd/kubectl-testkube/commands/common"
 	"github.com/kubeshop/testkube/pkg/ui"
-	"github.com/spf13/cobra"
 )
 
 func NewDeleteTestsCmd() *cobra.Command {
@@ -18,7 +19,9 @@ func NewDeleteTestsCmd() *cobra.Command {
 		Short:   "Delete Test",
 		Run: func(cmd *cobra.Command, args []string) {
 
-			client, _ := common.GetClient(cmd)
+			client, _, err := common.GetClient(cmd)
+			ui.ExitOnError("getting client", err)
+
 			namespace := cmd.Flag("namespace").Value.String()
 			if deleteAll {
 				err := client.DeleteTests("")

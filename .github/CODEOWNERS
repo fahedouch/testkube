@@ -1,6 +1,16 @@
-/assets/ @olensmar 
-/docs/ @olensmar @jfermi
-/img/ @olensmar 
-/api/ @olensmar 
+* @kubeshop/testkube-backend
 
-* @exu @nicufk @vsukhin @vLia
+/assets/ @kubeshop/testkube-docs
+/docs/ @kubeshop/testkube-docs
+/licenses/ @kubeshop/testkube-docs
+LICENSE @kubeshop/testkube-docs
+*.md @kubeshop/testkube-docs
+
+/test/ @kubeshop/testkube-qa @kubeshop/testkube
+
+/.github/ @kubeshop/testkube-devops
+/goreleaser_files/ @kubeshop/testkube-devops
+.goreleaser.yml @kubeshop/testkube-devops
+.goreleaser-dev.yml @kubeshop/testkube-devops
+.golangci.yml @kubeshop/testkube-devops
+.builds-* @kubeshop/testkube-devops

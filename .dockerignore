@@ -1,0 +1,12 @@
+.git
+.gitignore
+.github
+README.md
+Makefile
+build
+docs
+assets
+config
+choco
+test
+skaffold.yaml

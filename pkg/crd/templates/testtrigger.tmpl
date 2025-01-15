@@ -1,0 +1,143 @@
+apiVersion: tests.testkube.io/v1
+kind: TestTrigger
+metadata:
+  name: {{ .Name }}
+  namespace: {{ .Namespace }}
+  {{- if ne (len .Labels) 0 }}
+  labels:
+  {{- range $key, $value := .Labels }}
+    {{ $key }}: {{ $value }}
+  {{- end }}
+  {{- end }}
+spec:
+  {{- if .Resource }}
+  resource: {{ .Resource }}
+  {{- end }}
+  {{- if .ResourceSelector }}
+  resourceSelector:
+    {{- if .ResourceSelector.Name }}
+    name: {{ .ResourceSelector.Name }}
+    {{- end }}
+    {{- if .ResourceSelector.NameRegex }}
+    nameRegex: {{ .ResourceSelector.NameRegex }}
+    {{- end }}  
+    {{- if .ResourceSelector.Namespace }}
+    namespace: {{ .ResourceSelector.Namespace }}
+    {{- end }}
+    {{- if .ResourceSelector.LabelSelector }}
+    labelSelector:
+        {{- if .ResourceSelector.LabelSelector.MatchLabels }}
+        matchLabels:
+            {{- range $key, $value := .ResourceSelector.LabelSelector.MatchLabels }}
+            {{ $key }}: {{ $value }}
+            {{- end }}
+        {{- end }}
+        {{- if .ResourceSelector.LabelSelector.MatchExpressions }}
+        matchExpressions:
+            {{- range $exp := .ResourceSelector.LabelSelector.MatchExpressions }}
+          - key: {{ $exp.Key }}
+            operator: {{ $exp.Operator }}
+            values: {{ $exp.Values }}
+            {{- end }}
+        {{- end }}
+    {{- end }}
+  {{- end }}
+  {{- if .Event }}
+  event: {{ .Event }}
+  {{- end }}
+  {{- if .ConditionSpec }}
+  conditionSpec:
+    {{- if .ConditionSpec.Timeout }}
+    timeout: {{ .ConditionSpec.Timeout }}
+    {{- end }}
+    {{- if .ConditionSpec.Delay }}
+    delay: {{ .ConditionSpec.Delay }}
+    {{- end }}    
+    {{- if ne (len .ConditionSpec.Conditions) 0 }}
+    conditions:
+    {{- range $exp := .ConditionSpec.Conditions }}
+    - type: {{ $exp.Type_ }}
+      status: {{ $exp.Status }}
+      {{- if $exp.Reason }}
+      reason: {{ $exp.Reason }}
+      {{- end }}
+      {{- if $exp.Ttl }}
+      ttl: {{ $exp.Ttl }}
+      {{- end }}    
+    {{- end }}
+    {{- end }}
+  {{- end }}
+  {{- if .ProbeSpec }}
+  probeSpec:
+    {{- if .ProbeSpec.Timeout }}
+    timeout: {{ .ProbeSpec.Timeout }}
+    {{- end }}
+    {{- if .ProbeSpec.Delay }}
+    delay: {{ .ProbeSpec.Delay }}
+    {{- end }} 
+    {{- if ne (len .ProbeSpec.Probes) 0 }}
+    probes:
+    {{- range $exp := .ProbeSpec.Probes }}
+    - 
+      {{- if $exp.Scheme }}
+      scheme: {{ $exp.Scheme }}
+      {{- end }}
+      {{- if $exp.Host }}
+      host: {{ $exp.Host }}
+      {{- end }}
+      {{- if $exp.Path }}
+      path: {{ $exp.Path }}
+      {{- end }}
+      {{- if $exp.Port }}
+      port: {{ $exp.Port }}
+      {{- end }}
+      {{- if ne (len $exp.Headers) 0 }}
+      headers:
+      {{- range $key, $value := $exp.Headers }}
+        {{ $key }}: {{ $value }}
+      {{- end }}
+      {{- end }}
+    {{- end }}
+    {{- end }}
+  {{- end }}
+  {{- if .Action }}
+  action: {{ .Action }}
+  {{- end }}
+  {{- if .Execution }}
+  execution: {{ .Execution }}
+  {{- end }}
+  {{- if .ConcurrencyPolicy }}
+  concurrencyPolicy: {{ .ConcurrencyPolicy }}
+  {{- end }}
+  {{- if .TestSelector }}
+  testSelector:
+    {{- if .TestSelector.Name }}
+    name: {{ .TestSelector.Name }}
+    {{- end }}
+    {{- if .TestSelector.NameRegex }}
+    nameRegex: {{ .TestSelector.NameRegex }}
+    {{- end }}
+    {{- if .TestSelector.Namespace }}
+    namespace: {{ .TestSelector.Namespace }}
+    {{- end }}
+    {{- if .TestSelector.LabelSelector }}
+    labelSelector:
+        {{- if .TestSelector.LabelSelector.MatchLabels }}
+        matchLabels:
+            {{- range $key, $value := .TestSelector.LabelSelector.MatchLabels }}
+            {{ $key }}: {{ $value }}
+            {{- end }}
+        {{- end }}
+        {{- if .TestSelector.LabelSelector.MatchExpressions }}
+        matchExpressions:
+            {{- range $exp := .TestSelector.LabelSelector.MatchExpressions }}
+          - key: {{ $exp.Key }}
+            operator: {{ $exp.Operator }}
+            values: {{ $exp.Values }}
+            {{- end }}
+        {{- end }}
+    {{- end }}
+  {{- end }}
+  {{- if .Disabled }}
+  disabled: {{ .Disabled }}
+  {{- end }}

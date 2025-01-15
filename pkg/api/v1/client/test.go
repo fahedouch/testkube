@@ -9,6 +9,7 @@ import (
 
 	"github.com/kubeshop/testkube/pkg/api/v1/testkube"
 	"github.com/kubeshop/testkube/pkg/executor/output"
+	"github.com/kubeshop/testkube/pkg/logs/events"
 )
 
 // NewTestClient creates new Test client
@@ -16,28 +17,34 @@ func NewTestClient(
 	testTransport Transport[testkube.Test],
 	executionTransport Transport[testkube.Execution],
 	testWithExecutionTransport Transport[testkube.TestWithExecution],
+	testWithExecutionSummaryTransport Transport[testkube.TestWithExecutionSummary],
 	executionsResultTransport Transport[testkube.ExecutionsResult],
 	artifactTransport Transport[testkube.Artifact],
 	serverInfoTransport Transport[testkube.ServerInfo],
+	debugInfoTransport Transport[testkube.DebugInfo],
 ) TestClient {
 	return TestClient{
-		testTransport:              testTransport,
-		executionTransport:         executionTransport,
-		testWithExecutionTransport: testWithExecutionTransport,
-		executionsResultTransport:  executionsResultTransport,
-		artifactTransport:          artifactTransport,
-		serverInfoTransport:        serverInfoTransport,
+		testTransport:                     testTransport,
+		executionTransport:                executionTransport,
+		testWithExecutionTransport:        testWithExecutionTransport,
+		testWithExecutionSummaryTransport: testWithExecutionSummaryTransport,
+		executionsResultTransport:         executionsResultTransport,
+		artifactTransport:                 artifactTransport,
+		serverInfoTransport:               serverInfoTransport,
+		debugInfoTransport:                debugInfoTransport,
 	}
 }
 
 // TestClient is a client for tests
 type TestClient struct {
-	testTransport              Transport[testkube.Test]
-	executionTransport         Transport[testkube.Execution]
-	testWithExecutionTransport Transport[testkube.TestWithExecution]
-	executionsResultTransport  Transport[testkube.ExecutionsResult]
-	artifactTransport          Transport[testkube.Artifact]
-	serverInfoTransport        Transport[testkube.ServerInfo]
+	testTransport                     Transport[testkube.Test]
+	executionTransport                Transport[testkube.Execution]
+	testWithExecutionTransport        Transport[testkube.TestWithExecution]
+	testWithExecutionSummaryTransport Transport[testkube.TestWithExecutionSummary]
+	executionsResultTransport         Transport[testkube.ExecutionsResult]
+	artifactTransport                 Transport[testkube.Artifact]
+	serverInfoTransport               Transport[testkube.ServerInfo]
+	debugInfoTransport                Transport[testkube.DebugInfo]
 }
 
 // GetTest returns single test by id
@@ -62,14 +69,14 @@ func (c TestClient) ListTests(selector string) (tests testkube.Tests, err error)
 	return c.testTransport.ExecuteMultiple(http.MethodGet, uri, nil, params)
 }
 
-// ListTestWithExecutions list all test with executions
-func (c TestClient) ListTestWithExecutions(selector string) (testWithExecutions testkube.TestWithExecutions, err error) {
-	uri := c.testWithExecutionTransport.GetURI("/test-with-executions")
+// ListTestWithExecutionSummaries list all test with execution summaries
+func (c TestClient) ListTestWithExecutionSummaries(selector string) (testWithExecutionSummaries testkube.TestWithExecutionSummaries, err error) {
+	uri := c.testWithExecutionSummaryTransport.GetURI("/test-with-executions")
 	params := map[string]string{
 		"selector": selector,
 	}
 
-	return c.testWithExecutionTransport.ExecuteMultiple(http.MethodGet, uri, nil, params)
+	return c.testWithExecutionSummaryTransport.ExecuteMultiple(http.MethodGet, uri, nil, params)
 }
 
 // CreateTest creates new Test Custom Resource
@@ -86,9 +93,14 @@ func (c TestClient) CreateTest(options UpsertTestOptions) (test testkube.Test, e
 }
 
 // UpdateTest updates Test Custom Resource
-func (c TestClient) UpdateTest(options UpsertTestOptions) (test testkube.Test, err error) {
-	uri := c.testTransport.GetURI("/tests/%s", options.Name)
-	request := testkube.TestUpsertRequest(options)
+func (c TestClient) UpdateTest(options UpdateTestOptions) (test testkube.Test, err error) {
+	name := ""
+	if options.Name != nil {
+		name = *options.Name
+	}
+
+	uri := c.testTransport.GetURI("/tests/%s", name)
+	request := testkube.TestUpdateRequest(options)
 
 	body, err := json.Marshal(request)
 	if err != nil {
@@ -125,14 +137,41 @@ func (c TestClient) GetExecution(executionID string) (execution testkube.Executi
 func (c TestClient) ExecuteTest(id, executionName string, options ExecuteTestOptions) (execution testkube.Execution, err error) {
 	uri := c.executionTransport.GetURI("/tests/%s/executions", id)
 	request := testkube.ExecutionRequest{
-		Name:          executionName,
-		VariablesFile: options.ExecutionVariablesFileContent,
-		Variables:     options.ExecutionVariables,
-		Envs:          options.Envs,
-		Args:          options.Args,
-		SecretEnvs:    options.SecretEnvs,
-		HttpProxy:     options.HTTPProxy,
-		HttpsProxy:    options.HTTPSProxy,
+		Name:                               executionName,
+		IsVariablesFileUploaded:            options.IsVariablesFileUploaded,
+		VariablesFile:                      options.ExecutionVariablesFileContent,
+		Variables:                          options.ExecutionVariables,
+		Envs:                               options.Envs,
+		Command:                            options.Command,
+		Args:                               options.Args,
+		ArgsMode:                           options.ArgsMode,
+		SecretEnvs:                         options.SecretEnvs,
+		HttpProxy:                          options.HTTPProxy,
+		HttpsProxy:                         options.HTTPSProxy,
+		ExecutionLabels:                    options.ExecutionLabels,
+		Image:                              options.Image,
+		Uploads:                            options.Uploads,
+		BucketName:                         options.BucketName,
+		ArtifactRequest:                    options.ArtifactRequest,
+		JobTemplate:                        options.JobTemplate,
+		JobTemplateReference:               options.JobTemplateReference,
+		ContentRequest:                     options.ContentRequest,
+		PreRunScript:                       options.PreRunScriptContent,
+		PostRunScript:                      options.PostRunScriptContent,
+		ExecutePostRunScriptBeforeScraping: options.ExecutePostRunScriptBeforeScraping,
+		SourceScripts:                      options.SourceScripts,
+		ScraperTemplate:                    options.ScraperTemplate,
+		ScraperTemplateReference:           options.ScraperTemplateReference,
+		PvcTemplate:                        options.PvcTemplate,
+		PvcTemplateReference:               options.PvcTemplateReference,
+		NegativeTest:                       options.NegativeTest,
+		IsNegativeTestChangedOnRun:         options.IsNegativeTestChangedOnRun,
+		EnvConfigMaps:                      options.EnvConfigMaps,
+		EnvSecrets:                         options.EnvSecrets,
+		RunningContext:                     options.RunningContext,
+		SlavePodRequest:                    options.SlavePodRequest,
+		ExecutionNamespace:                 options.ExecutionNamespace,
+		DisableWebhooks:                    options.DisableWebhooks,
 	}
 
 	body, err := json.Marshal(request)
@@ -148,12 +187,36 @@ func (c TestClient) ExecuteTest(id, executionName string, options ExecuteTestOpt
 func (c TestClient) ExecuteTests(selector string, concurrencyLevel int, options ExecuteTestOptions) (executions []testkube.Execution, err error) {
 	uri := c.executionTransport.GetURI("/executions")
 	request := testkube.ExecutionRequest{
-		VariablesFile: options.ExecutionVariablesFileContent,
-		Variables:     options.ExecutionVariables,
-		Args:          options.Args,
-		SecretEnvs:    options.SecretEnvs,
-		HttpProxy:     options.HTTPProxy,
-		HttpsProxy:    options.HTTPSProxy,
+		IsVariablesFileUploaded:            options.IsVariablesFileUploaded,
+		VariablesFile:                      options.ExecutionVariablesFileContent,
+		Variables:                          options.ExecutionVariables,
+		Envs:                               options.Envs,
+		Command:                            options.Command,
+		Args:                               options.Args,
+		ArgsMode:                           options.ArgsMode,
+		SecretEnvs:                         options.SecretEnvs,
+		HttpProxy:                          options.HTTPProxy,
+		HttpsProxy:                         options.HTTPSProxy,
+		Uploads:                            options.Uploads,
+		BucketName:                         options.BucketName,
+		ArtifactRequest:                    options.ArtifactRequest,
+		JobTemplate:                        options.JobTemplate,
+		JobTemplateReference:               options.JobTemplateReference,
+		ContentRequest:                     options.ContentRequest,
+		PreRunScript:                       options.PreRunScriptContent,
+		PostRunScript:                      options.PostRunScriptContent,
+		ExecutePostRunScriptBeforeScraping: options.ExecutePostRunScriptBeforeScraping,
+		SourceScripts:                      options.SourceScripts,
+		ScraperTemplate:                    options.ScraperTemplate,
+		ScraperTemplateReference:           options.ScraperTemplateReference,
+		PvcTemplate:                        options.PvcTemplate,
+		PvcTemplateReference:               options.PvcTemplateReference,
+		NegativeTest:                       options.NegativeTest,
+		IsNegativeTestChangedOnRun:         options.IsNegativeTestChangedOnRun,
+		RunningContext:                     options.RunningContext,
+		SlavePodRequest:                    options.SlavePodRequest,
+		ExecutionNamespace:                 options.ExecutionNamespace,
+		DisableWebhooks:                    options.DisableWebhooks,
 	}
 
 	body, err := json.Marshal(request)
@@ -172,7 +235,13 @@ func (c TestClient) ExecuteTests(selector string, concurrencyLevel int, options 
 // AbortExecution aborts execution by testId and id
 func (c TestClient) AbortExecution(testID, id string) error {
 	uri := c.executionTransport.GetURI("/tests/%s/executions/%s", testID, id)
-	return c.executionTransport.Delete(uri, "", false)
+	return c.executionTransport.ExecuteMethod(http.MethodPatch, uri, "", false)
+}
+
+// AbortExecutions aborts all the executions of a test
+func (c TestClient) AbortExecutions(testID string) error {
+	uri := c.executionTransport.GetURI("/tests/%s/abort", testID)
+	return c.executionTransport.ExecuteMethod(http.MethodPost, uri, "", false)
 }
 
 // ListExecutions list all executions for given test name
@@ -198,6 +267,14 @@ func (c TestClient) Logs(id string) (logs chan output.Output, err error) {
 	return logs, err
 }
 
+// LogsV2 returns logs version 2 stream from log sever, based on job pods logs
+func (c TestClient) LogsV2(id string) (logs chan events.Log, err error) {
+	logs = make(chan events.Log)
+	uri := c.testTransport.GetURI("/executions/%s/logs/v2", id)
+	err = c.testTransport.GetLogsV2(uri, logs)
+	return logs, err
+}
+
 // GetExecutionArtifacts returns execution artifacts
 func (c TestClient) GetExecutionArtifacts(executionID string) (artifacts testkube.Artifacts, err error) {
 	uri := c.artifactTransport.GetURI("/executions/%s/artifacts", executionID)
@@ -207,11 +284,22 @@ func (c TestClient) GetExecutionArtifacts(executionID string) (artifacts testkub
 // DownloadFile downloads file
 func (c TestClient) DownloadFile(executionID, fileName, destination string) (artifact string, err error) {
 	uri := c.executionTransport.GetURI("/executions/%s/artifacts/%s", executionID, url.QueryEscape(fileName))
-	return c.executionTransport.GetFile(uri, fileName, destination)
+	return c.executionTransport.GetFile(uri, fileName, destination, nil)
+}
+
+// DownloadArchive downloads archive
+func (c TestClient) DownloadArchive(executionID, destination string, masks []string) (archive string, err error) {
+	uri := c.executionTransport.GetURI("/executions/%s/artifact-archive", executionID)
+	return c.executionTransport.GetFile(uri, fmt.Sprintf("%s.tar.gz", executionID), destination, map[string][]string{"mask": masks})
 }
 
 // GetServerInfo returns server info
 func (c TestClient) GetServerInfo() (info testkube.ServerInfo, err error) {
 	uri := c.serverInfoTransport.GetURI("/info")
 	return c.serverInfoTransport.Execute(http.MethodGet, uri, nil, nil)
+}
+
+func (c TestClient) GetDebugInfo() (debugInfo testkube.DebugInfo, err error) {
+	uri := c.debugInfoTransport.GetURI("/debug")
+	return c.debugInfoTransport.Execute(http.MethodGet, uri, nil, nil)
 }

@@ -5,21 +5,39 @@ import (
 	"regexp"
 
 	"github.com/Masterminds/semver"
-	"github.com/kubeshop/testkube/cmd/kubectl-testkube/commands/common"
-	"github.com/kubeshop/testkube/pkg/ui"
 	"github.com/spf13/cobra"
+
+	"github.com/kubeshop/testkube/cmd/kubectl-testkube/commands/common"
+	"github.com/kubeshop/testkube/cmd/kubectl-testkube/commands/common/render"
+	"github.com/kubeshop/testkube/pkg/ui"
 )
 
 var ErrOldClientVersion = fmt.Errorf("client version is older than api version, please upgrade")
 
 // PersistentPreRunVersionCheck will check versions based on commands client
 func PersistentPreRunVersionCheck(cmd *cobra.Command, clientVersion string) {
+	outputFlag := cmd.Flag("output")
+	outputType := render.OutputPretty
+	if outputFlag != nil {
+		outputType = render.OutputType(outputFlag.Value.String())
+	}
+
+	if outputType != render.OutputPretty {
+		return
+	}
+
 	// version validation
 	// if client version is less than server version show warning
-	client, _ := common.GetClient(cmd)
+	client, _, err := common.GetClient(cmd)
+	if err != nil {
+		return
+	}
+
 	info, err := client.GetServerInfo()
 	if err != nil {
-		ui.Warn(err.Error())
+		// omit check of versions if we can't get server info
+		// e.g. when there is not cloud token yet
+		ui.Debug(err.Error())
 		return
 	}
 

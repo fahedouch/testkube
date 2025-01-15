@@ -19,19 +19,31 @@ type TestSuiteExecution struct {
 	Id string `json:"id"`
 	// execution name
 	Name      string                    `json:"name"`
-	TestSuite *ObjectRef                `json:"testSuite,omitempty"`
+	TestSuite *ObjectRef                `json:"testSuite"`
 	Status    *TestSuiteExecutionStatus `json:"status,omitempty"`
-	// environment variables passed to executor
+	// Environment variables passed to executor.
+	// Deprecated: use Basic Variables instead
 	Envs      map[string]string   `json:"envs,omitempty"`
 	Variables map[string]Variable `json:"variables,omitempty"`
+	// secret uuid
+	SecretUUID string `json:"secretUUID,omitempty"`
 	// test start time
 	StartTime time.Time `json:"startTime,omitempty"`
 	// test end time
 	EndTime time.Time `json:"endTime,omitempty"`
 	// test duration
 	Duration string `json:"duration,omitempty"`
-	// steps execution restults
-	StepResults []TestSuiteStepExecutionResult `json:"stepResults,omitempty"`
-	// test suite execution labels
-	Labels map[string]string `json:"labels,omitempty"`
+	// test duration in ms
+	DurationMs int32 `json:"durationMs,omitempty"`
+	// steps execution results
+	StepResults []TestSuiteStepExecutionResultV2 `json:"stepResults,omitempty"`
+	// batch steps execution results
+	ExecuteStepResults []TestSuiteBatchStepExecutionResult `json:"executeStepResults,omitempty"`
+	// test suite labels
+	Labels         map[string]string `json:"labels,omitempty"`
+	RunningContext *RunningContext   `json:"runningContext,omitempty"`
+	// test suite execution name started the test suite execution
+	TestSuiteExecutionName string `json:"testSuiteExecutionName,omitempty"`
+	// whether webhooks on this execution are disabled
+	DisableWebhooks bool `json:"disableWebhooks,omitempty"`
 }

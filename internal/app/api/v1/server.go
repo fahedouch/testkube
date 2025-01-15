@@ -1,383 +1,219 @@
 package v1
 
 import (
-	"encoding/base64"
-	"encoding/json"
-	"os"
-	"strconv"
+	"go.uber.org/zap"
 
-	"github.com/gofiber/fiber/v2"
-	"github.com/gofiber/fiber/v2/middleware/cors"
-	"github.com/kelseyhightower/envconfig"
-	"k8s.io/apimachinery/pkg/api/errors"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-
-	executorv1 "github.com/kubeshop/testkube-operator/apis/executor/v1"
-	executorsclientv1 "github.com/kubeshop/testkube-operator/client/executors/v1"
-	testsclientv2 "github.com/kubeshop/testkube-operator/client/tests/v2"
-	testsuitesclientv1 "github.com/kubeshop/testkube-operator/client/testsuites/v1"
-	"github.com/kubeshop/testkube/internal/pkg/api/datefilter"
-	"github.com/kubeshop/testkube/internal/pkg/api/repository/result"
-	"github.com/kubeshop/testkube/internal/pkg/api/repository/testresult"
+	testtriggersclientv1 "github.com/kubeshop/testkube-operator/pkg/client/testtriggers/v1"
+	testworkflowsv1 "github.com/kubeshop/testkube-operator/pkg/client/testworkflows/v1"
+	"github.com/kubeshop/testkube/cmd/api-server/commons"
+	"github.com/kubeshop/testkube/internal/config"
 	"github.com/kubeshop/testkube/pkg/api/v1/testkube"
-	"github.com/kubeshop/testkube/pkg/cronjob"
+	"github.com/kubeshop/testkube/pkg/log"
+	repoConfig "github.com/kubeshop/testkube/pkg/repository/config"
+	"github.com/kubeshop/testkube/pkg/repository/testworkflow"
+	"github.com/kubeshop/testkube/pkg/secretmanager"
+	"github.com/kubeshop/testkube/pkg/testworkflows/executionworker/executionworkertypes"
+	"github.com/kubeshop/testkube/pkg/testworkflows/testworkflowexecutor"
+
+	executorsclientv1 "github.com/kubeshop/testkube-operator/pkg/client/executors/v1"
+	"github.com/kubeshop/testkube/internal/app/api/metrics"
+	"github.com/kubeshop/testkube/pkg/event"
+	ws "github.com/kubeshop/testkube/pkg/event/kind/websocket"
 	"github.com/kubeshop/testkube/pkg/executor/client"
-	"github.com/kubeshop/testkube/pkg/oauth"
-	"github.com/kubeshop/testkube/pkg/secret"
+	"github.com/kubeshop/testkube/pkg/featureflags"
 	"github.com/kubeshop/testkube/pkg/server"
 	"github.com/kubeshop/testkube/pkg/storage"
-	"github.com/kubeshop/testkube/pkg/storage/minio"
-	"github.com/kubeshop/testkube/pkg/webhook"
 )
 
 func NewTestkubeAPI(
-	namespace string,
-	executionsResults result.Repository,
-	testExecutionsResults testresult.Repository,
-	testsClient *testsclientv2.TestsClient,
-	executorsClient *executorsclientv1.ExecutorsClient,
-	testsuitesClient *testsuitesclientv1.TestSuitesClient,
-	secretClient *secret.Client,
-	webhookClient *executorsclientv1.WebhooksClient,
+	deprecatedClients commons.DeprecatedClients,
 	clusterId string,
+	namespace string,
+	testWorkflowResults testworkflow.Repository,
+	testWorkflowOutput testworkflow.OutputRepository,
+	artifactsStorage storage.ArtifactsStorage,
+	webhookClient executorsclientv1.WebhooksInterface,
+	testTriggersClient testtriggersclientv1.Interface,
+	testWorkflowsClient testworkflowsv1.Interface,
+	testWorkflowTemplatesClient testworkflowsv1.TestWorkflowTemplatesInterface,
+	configMap repoConfig.Repository,
+	secretManager secretmanager.SecretManager,
+	secretConfig testkube.SecretConfig,
+	testWorkflowExecutor testworkflowexecutor.TestWorkflowExecutor,
+	executionWorkerClient executionworkertypes.Worker,
+	eventsEmitter *event.Emitter,
+	websocketLoader *ws.WebsocketLoader,
+	metrics metrics.Metrics,
+	proContext *config.ProContext,
+	ff featureflags.FeatureFlags,
+	dashboardURI string,
+	helmchartVersion string,
+	serviceAccountNames map[string]string,
+	dockerImageVersion string,
 ) TestkubeAPI {
 
-	var httpConfig server.Config
-	err := envconfig.Process("APISERVER", &httpConfig)
-	// Do we want to panic here or just ignore the err
-	if err != nil {
-		panic(err)
+	return TestkubeAPI{
+		ClusterID:                   clusterId,
+		Log:                         log.DefaultLogger,
+		DeprecatedClients:           deprecatedClients,
+		TestWorkflowResults:         testWorkflowResults,
+		TestWorkflowOutput:          testWorkflowOutput,
+		SecretManager:               secretManager,
+		TestTriggersClient:          testTriggersClient,
+		TestWorkflowsClient:         testWorkflowsClient,
+		TestWorkflowTemplatesClient: testWorkflowTemplatesClient,
+		Metrics:                     metrics,
+		WebsocketLoader:             websocketLoader,
+		Events:                      eventsEmitter,
+		WebhooksClient:              webhookClient,
+		Namespace:                   namespace,
+		ConfigMap:                   configMap,
+		TestWorkflowExecutor:        testWorkflowExecutor,
+		ExecutionWorkerClient:       executionWorkerClient,
+		ArtifactsStorage:            artifactsStorage,
+		dashboardURI:                dashboardURI,
+		helmchartVersion:            helmchartVersion,
+		secretConfig:                secretConfig,
+		featureFlags:                ff,
+		ServiceAccountNames:         serviceAccountNames,
+		dockerImageVersion:          dockerImageVersion,
+		proContext:                  proContext,
 	}
-
-	// you can disable analytics tracking for API server
-	analyticsEnabledStr := os.Getenv("TESTKUBE_ANALYTICS_ENABLED")
-	analyticsEnabled, err := strconv.ParseBool(analyticsEnabledStr)
-	if err != nil {
-		analyticsEnabled = true
-	}
-
-	s := TestkubeAPI{
-		HTTPServer:           server.NewServer(httpConfig),
-		TestExecutionResults: testExecutionsResults,
-		ExecutionResults:     executionsResults,
-		TestsClient:          testsClient,
-		ExecutorsClient:      executorsClient,
-		SecretClient:         secretClient,
-		TestsSuitesClient:    testsuitesClient,
-		Metrics:              NewMetrics(),
-		EventsEmitter:        webhook.NewEmitter(),
-		WebhooksClient:       webhookClient,
-		Namespace:            namespace,
-		AnalyticsEnabled:     analyticsEnabled,
-		ClusterID:            clusterId,
-	}
-
-	initImage, err := s.loadDefaultExecutors(s.Namespace, os.Getenv("TESTKUBE_DEFAULT_EXECUTORS"))
-	if err != nil {
-		s.Log.Warnf("load default executors %w", err)
-	}
-
-	if err = s.jobTemplates.decodeFromEnv(); err != nil {
-		panic(err)
-	}
-
-	if s.Executor, err = client.NewJobExecutor(executionsResults, s.Namespace, initImage, s.jobTemplates.Job, s.Metrics); err != nil {
-		panic(err)
-	}
-
-	s.CronJobClient, err = cronjob.NewClient(httpConfig.Fullname, httpConfig.Port, s.jobTemplates.Cronjob, s.Namespace)
-	if err != nil {
-		panic(err)
-	}
-
-	s.Init()
-	return s
 }
 
 type TestkubeAPI struct {
-	server.HTTPServer
-	ExecutionResults     result.Repository
-	TestExecutionResults testresult.Repository
-	Executor             client.Executor
-	TestsSuitesClient    *testsuitesclientv1.TestSuitesClient
-	TestsClient          *testsclientv2.TestsClient
-	ExecutorsClient      *executorsclientv1.ExecutorsClient
-	SecretClient         *secret.Client
-	WebhooksClient       *executorsclientv1.WebhooksClient
-	EventsEmitter        *webhook.Emitter
-	CronJobClient        *cronjob.Client
-	Metrics              Metrics
-	Storage              storage.Client
-	storageParams        storageParams
-	jobTemplates         jobTemplates
-	Namespace            string
-	AnalyticsEnabled     bool
-	ClusterID            string
-	oauthParams          oauthParams
+	ClusterID                   string
+	Log                         *zap.SugaredLogger
+	TestWorkflowResults         testworkflow.Repository
+	TestWorkflowOutput          testworkflow.OutputRepository
+	Executor                    client.Executor
+	ContainerExecutor           client.Executor
+	TestWorkflowExecutor        testworkflowexecutor.TestWorkflowExecutor
+	ExecutionWorkerClient       executionworkertypes.Worker
+	DeprecatedClients           commons.DeprecatedClients
+	SecretManager               secretmanager.SecretManager
+	WebhooksClient              executorsclientv1.WebhooksInterface
+	TestTriggersClient          testtriggersclientv1.Interface
+	TestWorkflowsClient         testworkflowsv1.Interface
+	TestWorkflowTemplatesClient testworkflowsv1.TestWorkflowTemplatesInterface
+	Metrics                     metrics.Metrics
+	Namespace                   string
+	WebsocketLoader             *ws.WebsocketLoader
+	Events                      *event.Emitter
+	ConfigMap                   repoConfig.Repository
+	ArtifactsStorage            storage.ArtifactsStorage
+	dashboardURI                string
+	helmchartVersion            string
+	secretConfig                testkube.SecretConfig
+	featureFlags                featureflags.FeatureFlags
+	proContext                  *config.ProContext
+	ServiceAccountNames         map[string]string
+	dockerImageVersion          string
 }
 
-type jobTemplates struct {
-	Job     string
-	Cronjob string
-}
+func (s *TestkubeAPI) Init(server server.HTTPServer) {
+	// TODO: Consider extracting outside?
+	server.Routes.Get("/info", s.InfoHandler())
+	server.Routes.Get("/debug", s.DebugHandler())
 
-func (j *jobTemplates) decodeFromEnv() error {
-	err := envconfig.Process("TESTKUBE_TEMPLATE", j)
-	if err != nil {
-		return err
-	}
-	templates := []*string{&j.Job, &j.Cronjob}
-	for i := range templates {
-		if *templates[i] != "" {
-			dataDecoded, err := base64.StdEncoding.DecodeString(*templates[i])
-			if err != nil {
-				return err
-			}
+	root := server.Routes
 
-			*templates[i] = string(dataDecoded)
-		}
-	}
-
-	return nil
-}
-
-type storageParams struct {
-	SSL             bool
-	Endpoint        string
-	AccessKeyId     string
-	SecretAccessKey string
-	Location        string
-	Token           string
-}
-
-type oauthParams struct {
-	ClientID     string
-	ClientSecret string
-	Provider     oauth.ProviderType
-	Scopes       string
-}
-
-// Init initializes api server settings
-func (s TestkubeAPI) Init() {
-	if err := envconfig.Process("STORAGE", &s.storageParams); err != nil {
-		s.Log.Infow("Processing STORAGE environment config", err)
-	}
-
-	if err := envconfig.Process("TESTKUBE_OAUTH", &s.oauthParams); err != nil {
-		s.Log.Infow("Processing TESTKUBE_OAUTH environment config", err)
-	}
-
-	s.Storage = minio.NewClient(s.storageParams.Endpoint, s.storageParams.AccessKeyId, s.storageParams.SecretAccessKey, s.storageParams.Location, s.storageParams.Token, s.storageParams.SSL)
-
-	s.Routes.Static("/api-docs", "./api/v1")
-	s.Routes.Use(cors.New())
-	s.Routes.Use(s.AuthHandler())
-
-	if s.AnalyticsEnabled {
-		// global analytics tracking send async
-		s.Routes.Use(s.AnalyticsHandler())
-	}
-
-	s.Routes.Get("/info", s.InfoHandler())
-	s.Routes.Get("/routes", s.RoutesHandler())
-
-	executors := s.Routes.Group("/executors")
-
-	executors.Post("/", s.CreateExecutorHandler())
-	executors.Get("/", s.ListExecutorsHandler())
-	executors.Get("/:name", s.GetExecutorHandler())
-	executors.Delete("/:name", s.DeleteExecutorHandler())
-	executors.Delete("/", s.DeleteExecutorsHandler())
-
-	webhooks := s.Routes.Group("/webhooks")
+	webhooks := root.Group("/webhooks")
 
 	webhooks.Post("/", s.CreateWebhookHandler())
+	webhooks.Patch("/:name", s.UpdateWebhookHandler())
 	webhooks.Get("/", s.ListWebhooksHandler())
 	webhooks.Get("/:name", s.GetWebhookHandler())
 	webhooks.Delete("/:name", s.DeleteWebhookHandler())
 	webhooks.Delete("/", s.DeleteWebhooksHandler())
 
-	executions := s.Routes.Group("/executions")
+	testWorkflows := root.Group("/test-workflows")
+	testWorkflows.Get("/", s.ListTestWorkflowsHandler())
+	testWorkflows.Post("/", s.CreateTestWorkflowHandler())
+	testWorkflows.Delete("/", s.DeleteTestWorkflowsHandler())
+	testWorkflows.Get("/:id", s.GetTestWorkflowHandler())
+	testWorkflows.Put("/:id", s.UpdateTestWorkflowHandler())
+	testWorkflows.Delete("/:id", s.DeleteTestWorkflowHandler())
+	testWorkflows.Get("/:id/executions", s.ListTestWorkflowExecutionsHandler())
+	testWorkflows.Post("/:id/executions", s.ExecuteTestWorkflowHandler())
+	testWorkflows.Get("/:id/tags", s.ListTagsHandler())
+	testWorkflows.Get("/:id/metrics", s.GetTestWorkflowMetricsHandler())
+	testWorkflows.Get("/:id/executions/:executionID", s.GetTestWorkflowExecutionHandler())
+	testWorkflows.Post("/:id/abort", s.AbortAllTestWorkflowExecutionsHandler())
+	testWorkflows.Post("/:id/executions/:executionID/abort", s.AbortTestWorkflowExecutionHandler())
+	testWorkflows.Post("/:id/executions/:executionID/pause", s.PauseTestWorkflowExecutionHandler())
+	testWorkflows.Post("/:id/executions/:executionID/resume", s.ResumeTestWorkflowExecutionHandler())
+	testWorkflows.Get("/:id/executions/:executionID/logs", s.GetTestWorkflowExecutionLogsHandler())
 
-	executions.Get("/", s.ListExecutionsHandler())
-	executions.Post("/", s.ExecuteTestsHandler())
-	executions.Get("/:executionID", s.GetExecutionHandler())
-	executions.Get("/:executionID/artifacts", s.ListArtifactsHandler())
-	executions.Get("/:executionID/logs", s.ExecutionLogsHandler())
-	executions.Get("/:executionID/artifacts/:filename", s.GetArtifactHandler())
+	testWorkflowExecutions := root.Group("/test-workflow-executions")
+	testWorkflowExecutions.Get("/", s.ListTestWorkflowExecutionsHandler())
+	testWorkflowExecutions.Post("/", s.ExecuteTestWorkflowHandler())
+	testWorkflowExecutions.Get("/:executionID", s.GetTestWorkflowExecutionHandler())
+	testWorkflowExecutions.Get("/:executionID/notifications", s.StreamTestWorkflowExecutionNotificationsHandler())
+	testWorkflowExecutions.Get("/:executionID/notifications/services/:serviceName/:serviceIndex<int>", s.StreamTestWorkflowExecutionServiceNotificationsHandler())
+	testWorkflowExecutions.Get("/:executionID/notifications/parallel-steps/:ref/:workerIndex<int>", s.StreamTestWorkflowExecutionParallelStepNotificationsHandler())
+	testWorkflowExecutions.Get("/:executionID/notifications/stream", s.StreamTestWorkflowExecutionNotificationsWebSocketHandler())
+	testWorkflowExecutions.Get("/:executionID/notifications/stream/services/:serviceName/:serviceIndex<int>", s.StreamTestWorkflowExecutionServiceNotificationsWebSocketHandler())
+	testWorkflowExecutions.Get("/:executionID/notifications/stream/parallel-steps/:ref/:workerIndex<int>", s.StreamTestWorkflowExecutionParallelStepNotificationsWebSocketHandler())
+	testWorkflowExecutions.Post("/:executionID/abort", s.AbortTestWorkflowExecutionHandler())
+	testWorkflowExecutions.Post("/:executionID/pause", s.PauseTestWorkflowExecutionHandler())
+	testWorkflowExecutions.Post("/:executionID/resume", s.ResumeTestWorkflowExecutionHandler())
+	testWorkflowExecutions.Get("/:executionID/logs", s.GetTestWorkflowExecutionLogsHandler())
+	testWorkflowExecutions.Get("/:executionID/artifacts", s.ListTestWorkflowExecutionArtifactsHandler())
+	testWorkflowExecutions.Get("/:executionID/artifacts/:filename", s.GetTestWorkflowArtifactHandler())
+	testWorkflowExecutions.Get("/:executionID/artifact-archive", s.GetTestWorkflowArtifactArchiveHandler())
 
-	tests := s.Routes.Group("/tests")
+	testWorkflowWithExecutions := root.Group("/test-workflow-with-executions")
+	testWorkflowWithExecutions.Get("/", s.ListTestWorkflowWithExecutionsHandler())
+	testWorkflowWithExecutions.Get("/:id", s.GetTestWorkflowWithExecutionHandler())
+	testWorkflowWithExecutions.Get("/:id/tags", s.ListTagsHandler())
 
-	tests.Get("/", s.ListTestsHandler())
-	tests.Post("/", s.CreateTestHandler())
-	tests.Patch("/:id", s.UpdateTestHandler())
-	tests.Delete("/", s.DeleteTestsHandler())
+	root.Post("/preview-test-workflow", s.PreviewTestWorkflowHandler())
 
-	tests.Get("/:id", s.GetTestHandler())
-	tests.Delete("/:id", s.DeleteTestHandler())
+	testWorkflowTemplates := root.Group("/test-workflow-templates")
+	testWorkflowTemplates.Get("/", s.ListTestWorkflowTemplatesHandler())
+	testWorkflowTemplates.Post("/", s.CreateTestWorkflowTemplateHandler())
+	testWorkflowTemplates.Delete("/", s.DeleteTestWorkflowTemplatesHandler())
+	testWorkflowTemplates.Get("/:id", s.GetTestWorkflowTemplateHandler())
+	testWorkflowTemplates.Put("/:id", s.UpdateTestWorkflowTemplateHandler())
+	testWorkflowTemplates.Delete("/:id", s.DeleteTestWorkflowTemplateHandler())
 
-	tests.Post("/:id/executions", s.ExecuteTestsHandler())
+	testTriggers := root.Group("/triggers")
+	testTriggers.Get("/", s.ListTestTriggersHandler())
+	testTriggers.Post("/", s.CreateTestTriggerHandler())
+	testTriggers.Patch("/", s.BulkUpdateTestTriggersHandler())
+	testTriggers.Delete("/", s.DeleteTestTriggersHandler())
+	testTriggers.Get("/:id", s.GetTestTriggerHandler())
+	testTriggers.Patch("/:id", s.UpdateTestTriggerHandler())
+	testTriggers.Delete("/:id", s.DeleteTestTriggerHandler())
 
-	tests.Get("/:id/executions", s.ListExecutionsHandler())
-	tests.Get("/:id/executions/:executionID", s.GetExecutionHandler())
-	tests.Delete("/:id/executions/:executionID", s.AbortExecutionHandler())
+	keymap := root.Group("/keymap")
+	keymap.Get("/triggers", s.GetTestTriggerKeyMapHandler())
 
-	testWithExecutions := s.Routes.Group("/test-with-executions")
-	testWithExecutions.Get("/", s.ListTestWithExecutionsHandler())
-	testWithExecutions.Get("/:id", s.GetTestWithExecutionHandler())
-
-	testsuites := s.Routes.Group("/test-suites")
-
-	testsuites.Post("/", s.CreateTestSuiteHandler())
-	testsuites.Patch("/:id", s.UpdateTestSuiteHandler())
-	testsuites.Get("/", s.ListTestSuitesHandler())
-	testsuites.Delete("/", s.DeleteTestSuitesHandler())
-	testsuites.Get("/:id", s.GetTestSuiteHandler())
-	testsuites.Delete("/:id", s.DeleteTestSuiteHandler())
-
-	testsuites.Post("/:id/executions", s.ExecuteTestSuitesHandler())
-	testsuites.Get("/:id/executions", s.ListTestSuiteExecutionsHandler())
-	testsuites.Get("/:id/executions/:executionID", s.GetTestSuiteExecutionHandler())
-
-	testExecutions := s.Routes.Group("/test-suite-executions")
-	testExecutions.Get("/", s.ListTestSuiteExecutionsHandler())
-	testExecutions.Post("/", s.ExecuteTestSuitesHandler())
-	testExecutions.Get("/:executionID", s.GetTestSuiteExecutionHandler())
-
-	testSuiteWithExecutions := s.Routes.Group("/test-suite-with-executions")
-	testSuiteWithExecutions.Get("/", s.ListTestSuiteWithExecutionsHandler())
-	testSuiteWithExecutions.Get("/:id", s.GetTestSuiteWithExecutionHandler())
-
-	labels := s.Routes.Group("/labels")
+	labels := root.Group("/labels")
 	labels.Get("/", s.ListLabelsHandler())
 
-	slack := s.Routes.Group("/slack")
-	slack.Get("/", s.OauthHandler())
+	tags := root.Group("/tags")
+	tags.Get("/", s.ListTagsHandler())
 
-	s.EventsEmitter.RunWorkers()
-	s.HandleEmitterLogs()
+	events := root.Group("/events")
+	events.Post("/flux", s.FluxEventHandler())
+	events.Get("/stream", s.EventsStreamHandler())
 
-	// mount everything on results
-	// TODO it should be named /api/ + dashboard refactor
-	s.Mux.Mount("/results", s.Mux)
+	configs := root.Group("/config")
+	configs.Get("/", s.GetConfigsHandler())
+	configs.Patch("/", s.UpdateConfigsHandler())
 
-	s.Log.Infow("Testkube API configured", "namespace", s.Namespace, "clusterId", s.ClusterID)
-}
+	debug := root.Group("/debug")
+	debug.Get("/listeners", s.GetDebugListenersHandler())
 
-// TODO should we use single generic filter for all list based resources ?
-// currently filters for e.g. tests are done "by hand"
-func getFilterFromRequest(c *fiber.Ctx) result.Filter {
+	secrets := root.Group("/secrets")
+	secrets.Get("/", s.ListSecretsHandler())
+	secrets.Post("/", s.CreateSecretHandler())
+	secrets.Get("/:id", s.GetSecretHandler())
+	secrets.Delete("/:id", s.DeleteSecretHandler())
+	secrets.Patch("/:id", s.UpdateSecretHandler())
 
-	filter := result.NewExecutionsFilter()
-
-	// id for /tests/ID/executions
-	testName := c.Params("id", "")
-	if testName == "" {
-		// query param for /executions?testName
-		testName = c.Query("testName", "")
-	}
-
-	if testName != "" {
-		filter = filter.WithTestName(testName)
-	}
-
-	textSearch := c.Query("textSearch", "")
-	if textSearch != "" {
-		filter = filter.WithTextSearch(textSearch)
-	}
-
-	page, err := strconv.Atoi(c.Query("page", ""))
-	if err == nil {
-		filter = filter.WithPage(page)
-	}
-
-	pageSize, err := strconv.Atoi(c.Query("pageSize", ""))
-	if err == nil && pageSize != 0 {
-		filter = filter.WithPageSize(pageSize)
-	}
-
-	status := c.Query("status", "")
-	if status != "" {
-		filter = filter.WithStatus(status)
-	}
-
-	objectType := c.Query("type", "")
-	if objectType != "" {
-		filter = filter.WithType(objectType)
-	}
-
-	dFilter := datefilter.NewDateFilter(c.Query("startDate", ""), c.Query("endDate", ""))
-	if dFilter.IsStartValid {
-		filter = filter.WithStartDate(dFilter.Start)
-	}
-
-	if dFilter.IsEndValid {
-		filter = filter.WithEndDate(dFilter.End)
-	}
-
-	selector := c.Query("selector")
-	if selector != "" {
-		filter = filter.WithSelector(selector)
-	}
-
-	return filter
-}
-
-// loadDefaultExecutors loads default executors
-func (s TestkubeAPI) loadDefaultExecutors(namespace, data string) (initImage string, err error) {
-	var executors []testkube.ExecutorDetails
-
-	if data == "" {
-		return "", nil
-	}
-
-	dataDecoded, err := base64.StdEncoding.DecodeString(data)
-	if err != nil {
-		return "", err
-	}
-
-	if err := json.Unmarshal([]byte(dataDecoded), &executors); err != nil {
-		return "", err
-	}
-
-	for _, executor := range executors {
-		if executor.Executor == nil {
-			continue
-		}
-
-		if executor.Name == "executor-init" {
-			initImage = executor.Executor.Image
-			continue
-		}
-
-		obj := &executorv1.Executor{
-			ObjectMeta: metav1.ObjectMeta{
-				Name:      executor.Name,
-				Namespace: namespace,
-			},
-			Spec: executorv1.ExecutorSpec{
-				Types:        executor.Executor.Types,
-				ExecutorType: executor.Executor.ExecutorType,
-				Image:        executor.Executor.Image,
-			},
-		}
-
-		result, err := s.ExecutorsClient.Get(executor.Name)
-		if err != nil && !errors.IsNotFound(err) {
-			return "", err
-		}
-
-		if err != nil {
-			if _, err = s.ExecutorsClient.Create(obj); err != nil {
-				return "", err
-			}
-		} else {
-			result.Spec = obj.Spec
-			if _, err = s.ExecutorsClient.Update(result); err != nil {
-				return "", err
-			}
-		}
-	}
-
-	return initImage, nil
+	repositories := root.Group("/repositories")
+	repositories.Post("/", s.ValidateRepositoryHandler())
 }

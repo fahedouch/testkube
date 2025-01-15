@@ -1,0 +1,9 @@
+ignore:
+  - "cmd/**/*"
+  - "**/*_mock.go"
+  - "**/mock_*.go"
+
+coverage:
+  status:
+    project: false
+    patch: false

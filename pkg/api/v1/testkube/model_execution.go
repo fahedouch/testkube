@@ -13,33 +13,77 @@ import (
 	"time"
 )
 
-// Test execution
+// test execution
 type Execution struct {
 	// execution id
 	Id string `json:"id,omitempty"`
 	// unique test name (CRD Test name)
 	TestName string `json:"testName,omitempty"`
+	// unique test suite name (CRD Test suite name), if it's run as a part of test suite
+	TestSuiteName string `json:"testSuiteName,omitempty"`
 	// test namespace
 	TestNamespace string `json:"testNamespace,omitempty"`
 	// test type e.g. postman/collection
 	TestType string `json:"testType,omitempty"`
 	// execution name
 	Name string `json:"name,omitempty"`
-	// environment variables passed to executor
+	// execution number
+	Number int32 `json:"number,omitempty"`
+	// Environment variables passed to executor.
+	// Deprecated: use Basic Variables instead
 	Envs map[string]string `json:"envs,omitempty"`
+	// executor image command
+	Command []string `json:"command,omitempty"`
 	// additional arguments/flags passed to executor binary
-	Args      []string            `json:"args,omitempty"`
+	Args []string `json:"args,omitempty"`
+	// usage mode for arguments
+	ArgsMode  string              `json:"args_mode,omitempty"`
 	Variables map[string]Variable `json:"variables,omitempty"`
+	// in case the variables file is too big, it will be uploaded to storage
+	IsVariablesFileUploaded bool `json:"isVariablesFileUploaded,omitempty"`
 	// variables file content - need to be in format for particular executor (e.g. postman envs file)
-	VariablesFile string       `json:"variablesFile,omitempty"`
-	Content       *TestContent `json:"content,omitempty"`
+	VariablesFile string `json:"variablesFile,omitempty"`
+	// test secret uuid
+	TestSecretUUID string `json:"testSecretUUID,omitempty"`
+	// test suite secret uuid, if it's run as a part of test suite
+	TestSuiteSecretUUID string       `json:"testSuiteSecretUUID,omitempty"`
+	Content             *TestContent `json:"content,omitempty"`
 	// test start time
 	StartTime time.Time `json:"startTime,omitempty"`
 	// test end time
 	EndTime time.Time `json:"endTime,omitempty"`
 	// test duration
-	Duration        string           `json:"duration,omitempty"`
+	Duration string `json:"duration,omitempty"`
+	// test duration in milliseconds
+	DurationMs      int32            `json:"durationMs,omitempty"`
 	ExecutionResult *ExecutionResult `json:"executionResult,omitempty"`
-	// execution labels
+	// test and execution labels
 	Labels map[string]string `json:"labels,omitempty"`
+	// list of file paths that need to be copied into the test from uploads
+	Uploads []string `json:"uploads,omitempty"`
+	// minio bucket name to get uploads from
+	BucketName      string           `json:"bucketName,omitempty"`
+	ArtifactRequest *ArtifactRequest `json:"artifactRequest,omitempty"`
+	// script to run before test execution
+	PreRunScript string `json:"preRunScript,omitempty"`
+	// script to run after test execution
+	PostRunScript string `json:"postRunScript,omitempty"`
+	// execute post run script before scraping (prebuilt executor only)
+	ExecutePostRunScriptBeforeScraping bool `json:"executePostRunScriptBeforeScraping,omitempty"`
+	// run scripts using source command (container executor only)
+	SourceScripts  bool            `json:"sourceScripts,omitempty"`
+	RunningContext *RunningContext `json:"runningContext,omitempty"`
+	// shell used in container executor
+	ContainerShell string `json:"containerShell,omitempty"`
+	// test execution name started the test execution
+	TestExecutionName string `json:"testExecutionName,omitempty"`
+	// execution ids for artifacts to download
+	DownloadArtifactExecutionIDs []string `json:"downloadArtifactExecutionIDs,omitempty"`
+	// test names for artifacts to download from latest executions
+	DownloadArtifactTestNames []string    `json:"downloadArtifactTestNames,omitempty"`
+	SlavePodRequest           *PodRequest `json:"slavePodRequest,omitempty"`
+	// namespace for test execution (Pro edition only)
+	ExecutionNamespace string `json:"executionNamespace,omitempty"`
+	// whether webhooks on this execution are disabled
+	DisableWebhooks bool `json:"disableWebhooks,omitempty"`
 }

@@ -7,8 +7,9 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/kubeshop/testkube/pkg/executor/output"
 	"github.com/stretchr/testify/assert"
+
+	"github.com/kubeshop/testkube/pkg/executor/output"
 )
 
 func TestTrimSSEChunk(t *testing.T) {
@@ -22,7 +23,7 @@ func TestTrimSSEChunk(t *testing.T) {
 // TestStreamToLogsChannelOldErrorFormat parses old output error format and return type field
 func TestStreamToLogsChannelOldErrorFormat(t *testing.T) {
 	log := make(chan output.Output)
-	in := []byte(`data: {"type": "error", "message": "some message"}\n\n`)
+	in := []byte(`data: {"type": "error", "message": "some message"}` + "\n\n")
 	buf := bytes.NewBuffer(in)
 
 	go StreamToLogsChannel(buf, log)
@@ -39,5 +40,6 @@ func TestStreamToLogsChannelNewErrorFormat(t *testing.T) {
 
 	go StreamToLogsChannel(buf, log)
 	result := <-log
-	assert.Equal(t, output.Output{Type_: "error", Content: "some message"}, result)
+	assert.Equal(t, "error", result.Type_)
+	assert.Equal(t, "some message", result.Content)
 }

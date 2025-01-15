@@ -17,17 +17,20 @@ type TestSuite struct {
 	Name        string `json:"name"`
 	Namespace   string `json:"namespace,omitempty"`
 	Description string `json:"description,omitempty"`
-	// Run this step before whole suite
-	Before []TestSuiteStep `json:"before,omitempty"`
-	// Steps to run
-	Steps []TestSuiteStep `json:"steps"`
-	// Run this step after whole suite
-	After []TestSuiteStep `json:"after,omitempty"`
+	// Run these batch steps before whole suite
+	Before []TestSuiteBatchStep `json:"before,omitempty"`
+	// Batch steps to run
+	Steps []TestSuiteBatchStep `json:"steps,omitempty"`
+	// Run these batch steps after whole suite
+	After []TestSuiteBatchStep `json:"after,omitempty"`
 	// test suite labels
 	Labels map[string]string `json:"labels,omitempty"`
 	// schedule to run test suite
-	Schedule  string              `json:"schedule,omitempty"`
-	Repeats   int32               `json:"repeats,omitempty"`
-	Variables map[string]Variable `json:"variables,omitempty"`
-	Created   time.Time           `json:"created,omitempty"`
+	Schedule         string                     `json:"schedule,omitempty"`
+	Repeats          int32                      `json:"repeats,omitempty"`
+	Created          time.Time                  `json:"created,omitempty"`
+	ExecutionRequest *TestSuiteExecutionRequest `json:"executionRequest,omitempty"`
+	Status           *TestSuiteStatus           `json:"status"`
+	// if test suite is offline and cannot be executed
+	ReadOnly bool `json:"readOnly,omitempty"`
 }

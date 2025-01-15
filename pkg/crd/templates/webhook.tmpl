@@ -3,13 +3,37 @@ kind: Webhook
 metadata:
   name: {{ .Name }}
   namespace: {{ .Namespace }}
+  {{- if ne (len .Labels) 0 }}
   labels:
   {{- range $key, $value := .Labels }}
     {{ $key }}: {{ $value }}
   {{- end }}
+  {{- end }}
 spec:
+  {{- if ne (len .Events) 0 }}
   events:
   {{- range .Events }}
   - {{ . }}
   {{- end }}
+  {{- end }}
+  {{- if .Uri }}
   uri: {{ .Uri }}
+  {{- end }}
+  {{- if .Selector }}
+  selector: {{ .Selector }}
+  {{- end }}
+  {{- if .PayloadObjectField }}
+  payloadObjectField: {{ .PayloadObjectField }}
+  {{- end }}
+  {{- if .PayloadTemplate }}
+  payloadTemplate: {{ .PayloadTemplate }}
+  {{- end }}
+  {{- if .PayloadTemplateReference }}
+  payloadTemplateReference: {{ .PayloadTemplateReference }}
+  {{- end }}  
+  {{- if ne (len .Headers) 0 }}
+  headers:
+  {{- range $key, $value := .Headers }}
+    {{ $key }}: {{ $value }}
+  {{- end }}
+  {{- end }}

@@ -1,28 +1,33 @@
 package commands
 
 import (
+	"context"
 	"fmt"
 	"os"
+	"os/signal"
+	"syscall"
 
+	"github.com/pkg/errors"
 	"github.com/spf13/cobra"
 
+	"golang.org/x/sync/errgroup"
+
+	"github.com/kubeshop/testkube/cmd/kubectl-testkube/commands/common"
+	"github.com/kubeshop/testkube/cmd/kubectl-testkube/commands/common/validator"
+	"github.com/kubeshop/testkube/cmd/kubectl-testkube/commands/pro"
 	"github.com/kubeshop/testkube/cmd/kubectl-testkube/config"
-	"github.com/kubeshop/testkube/pkg/analytics"
+	"github.com/kubeshop/testkube/cmd/tcl/kubectl-testkube/devbox"
+	"github.com/kubeshop/testkube/pkg/telemetry"
 	"github.com/kubeshop/testkube/pkg/ui"
 )
 
 var (
-	Commit  string
-	Version string
-	BuiltBy string
-	Date    string
-
-	analyticsEnabled bool
-	client           string
-	verbose          bool
-	namespace        string
-	apiURI           string
-	oauthEnabled     bool
+	client       string
+	verbose      bool
+	namespace    string
+	oauthEnabled bool
+	insecure     bool
+	headers      map[string]string
 )
 
 func init() {
@@ -31,6 +36,7 @@ func init() {
 	RootCmd.AddCommand(NewUpdateCmd())
 
 	RootCmd.AddCommand(NewGetCmd())
+	RootCmd.AddCommand(NewSetCmd())
 	RootCmd.AddCommand(NewRunCmd())
 	RootCmd.AddCommand(NewDeleteCmd())
 	RootCmd.AddCommand(NewAbortCmd())
@@ -42,50 +48,103 @@ func init() {
 	RootCmd.AddCommand(NewDownloadCmd())
 	RootCmd.AddCommand(NewGenerateCmd())
 
-	RootCmd.AddCommand(NewInstallCmd())
+	RootCmd.AddCommand(NewInitCmd())
 	RootCmd.AddCommand(NewUpgradeCmd())
-	RootCmd.AddCommand(NewUninstallCmd())
+	RootCmd.AddCommand(NewPurgeCmd())
 	RootCmd.AddCommand(NewWatchCmd())
 	RootCmd.AddCommand(NewDashboardCmd())
 	RootCmd.AddCommand(NewMigrateCmd())
 	RootCmd.AddCommand(NewVersionCmd())
 
 	RootCmd.AddCommand(NewConfigCmd())
+	RootCmd.AddCommand(NewDebugCmd())
+	RootCmd.AddCommand(NewDiagnosticsCmd())
+	RootCmd.AddCommand(NewCreateTicketCmd())
+
+	RootCmd.AddCommand(NewAgentCmd())
+	RootCmd.AddCommand(NewCloudCmd())
+	RootCmd.AddCommand(NewProCmd())
+	RootCmd.AddCommand(NewDockerCmd())
+	RootCmd.AddCommand(pro.NewLoginCmd())
+
+	RootCmd.AddCommand(devbox.NewDevBoxCommand())
+
+	RootCmd.SetHelpCommand(NewHelpCmd())
 }
 
 var RootCmd = &cobra.Command{
-	Use:   "kubectl-testkube",
+	Use:   "testkube",
 	Short: "Testkube entrypoint for kubectl plugin",
-
-	PersistentPostRun: func(cmd *cobra.Command, args []string) {
+	PersistentPreRun: func(cmd *cobra.Command, args []string) {
 		ui.SetVerbose(verbose)
 
-		if analyticsEnabled {
-			ui.Debug("collecting anonymous analytics data, you can disable it by calling `kubectl testkube disable analytics`")
-			out, err := analytics.SendAnonymousCmdInfo(cmd, Version)
+		// don't validate context before set and completion
+		if cmd.Name() == "context" || (cmd.Parent() != nil && cmd.Parent().Name() == "completion") {
+			return
+		}
+
+		cfg, err := config.Load()
+		ui.ExitOnError("loading config", err)
+
+		if err = validator.ValidateCloudContext(cfg); err != nil {
+			common.UiCloudContextValidationError(err)
+		}
+	},
+
+	PersistentPostRun: func(cmd *cobra.Command, args []string) {
+		clientCfg, err := config.Load()
+		ui.WarnOnError("loading config", err)
+
+		client, _, err := common.GetClient(cmd)
+		if err != nil {
+			return
+		}
+		// We ignore this check for cloud, since agent can be offline, and config API won't work
+		// but other commands should work.
+		if clientCfg.ContextType != config.ContextTypeCloud {
+			serverCfg, err := client.GetConfig()
 			if ui.Verbose && err != nil {
 				ui.Err(err)
 			}
-			ui.Debug("analytics send event response", out)
+
+			if clientCfg.TelemetryEnabled != serverCfg.EnableTelemetry && err == nil {
+				if serverCfg.EnableTelemetry {
+					clientCfg.EnableAnalytics()
+					ui.Debug("Sync telemetry on CLI with API", "enabled")
+				} else {
+					clientCfg.DisableAnalytics()
+					ui.Debug("Sync telemetry on CLI with API", "disabled")
+				}
+
+				err = config.Save(clientCfg)
+				ui.WarnOnError("syncing config", err)
+			}
+		}
+		if clientCfg.TelemetryEnabled {
+			ui.Debug("collecting anonymous telemetry data, you can disable it by calling `kubectl testkube disable telemetry`")
+			out, err := telemetry.SendCmdEvent(cmd, common.Version)
+			if ui.Verbose && err != nil {
+				ui.Err(err)
+			}
+			ui.Debug("telemetry send event response", out)
 
 			// trigger init event only for first run
-			cfg, err := config.Load()
+			clientCfg, err := config.Load()
 			ui.WarnOnError("loading config", err)
 
-			if !cfg.Initialized {
-				cfg.SetInitialized()
-				err := config.Save(cfg)
+			if !clientCfg.Initialized {
+				clientCfg.SetInitialized()
+				err := config.Save(clientCfg)
 				ui.WarnOnError("saving config", err)
 
 				ui.Debug("sending 'init' event")
 
-				out, err := analytics.SendCmdInit(cmd, Version)
+				out, err := telemetry.SendCmdInitEvent(cmd, common.Version)
 				if ui.Verbose && err != nil {
 					ui.Err(err)
 				}
-				ui.Debug("analytics init event response", out)
+				ui.Debug("telemetry init event response", out)
 			}
-
 		}
 	},
 
@@ -106,19 +165,43 @@ func Execute() {
 		defaultNamespace = cfg.Namespace
 	}
 
-	apiURI := cfg.APIURI
+	apiURI := "http://localhost:8088"
+	if cfg.APIURI != "" {
+		apiURI = cfg.APIURI
+	}
+
 	if os.Getenv("TESTKUBE_API_URI") != "" {
 		apiURI = os.Getenv("TESTKUBE_API_URI")
 	}
 
-	RootCmd.PersistentFlags().BoolVarP(&analyticsEnabled, "analytics-enabled", "", cfg.AnalyticsEnabled, "enable analytics")
-	RootCmd.PersistentFlags().StringVarP(&client, "client", "c", "proxy", "client used for connecting to Testkube API one of proxy|direct")
+	// Run services within an errgroup to propagate errors between services.
+	g, ctx := errgroup.WithContext(context.Background())
+
+	// Cancel the errgroup context on SIGINT and SIGTERM,
+	// which shuts everything down gracefully.
+	stopSignal := make(chan os.Signal, 1)
+	signal.Notify(stopSignal, syscall.SIGINT, syscall.SIGTERM)
+	g.Go(func() error {
+		select {
+		case <-ctx.Done():
+			return nil
+		case sig := <-stopSignal:
+			go func() {
+				<-stopSignal
+				os.Exit(137)
+			}()
+			return errors.Errorf("received signal: %v", sig)
+		}
+	})
+
+	RootCmd.PersistentFlags().StringVarP(&client, "client", "c", "proxy", "client used for connecting to Testkube API one of proxy|direct|cluster")
 	RootCmd.PersistentFlags().StringVarP(&namespace, "namespace", "", defaultNamespace, "Kubernetes namespace, default value read from config if set")
 	RootCmd.PersistentFlags().BoolVarP(&verbose, "verbose", "", false, "show additional debug messages")
 	RootCmd.PersistentFlags().StringVarP(&apiURI, "api-uri", "a", apiURI, "api uri, default value read from config if set")
-	RootCmd.PersistentFlags().BoolVarP(&oauthEnabled, "oauth-enabled", "", cfg.OAuth2Data.Enabled, "enable oauth")
+	RootCmd.PersistentFlags().BoolVarP(&insecure, "insecure", "", false, "insecure connection for direct client")
+	RootCmd.PersistentFlags().StringToStringVarP(&headers, "header", "", cfg.Headers, "headers for direct client key value pair: --header name=value")
 
-	if err := RootCmd.Execute(); err != nil {
+	if err := RootCmd.ExecuteContext(ctx); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}

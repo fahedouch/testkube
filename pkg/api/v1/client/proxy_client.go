@@ -8,32 +8,47 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/pkg/errors"
 	"k8s.io/client-go/kubernetes"
 	_ "k8s.io/client-go/plugin/pkg/client/auth"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
 
+	"github.com/kubeshop/testkube/pkg/api/v1/testkube"
 	"github.com/kubeshop/testkube/pkg/executor/output"
+	"github.com/kubeshop/testkube/pkg/logs/events"
 	"github.com/kubeshop/testkube/pkg/problem"
 )
 
 // GetClientSet configures Kube client set, can override host with local proxy
-func GetClientSet(overrideHost string) (clientset kubernetes.Interface, err error) {
-	clcfg, err := clientcmd.NewDefaultClientConfigLoadingRules().Load()
-	if err != nil {
-		return clientset, err
-	}
+func GetClientSet(overrideHost string, clientType ClientType) (clientset kubernetes.Interface, err error) {
+	var restcfg *rest.Config
 
-	restcfg, err := clientcmd.NewNonInteractiveClientConfig(
-		*clcfg, "", &clientcmd.ConfigOverrides{}, nil).ClientConfig()
-	if err != nil {
-		return clientset, err
-	}
+	switch clientType {
+	case ClientCluster:
+		restcfg, err = rest.InClusterConfig()
+		if err != nil {
+			return clientset, errors.Wrap(err, "failed to get in cluster config")
+		}
+	case ClientProxy:
+		clcfg, err := clientcmd.NewDefaultClientConfigLoadingRules().Load()
+		if err != nil {
+			return clientset, errors.Wrap(err, "failed to get clientset config")
+		}
 
-	// override host is needed to override kubeconfig kubernetes proxy host name
-	// to local proxy passed to API server run local proxy first by `make api-proxy`
-	if overrideHost != "" {
-		restcfg.Host = overrideHost
+		restcfg, err = clientcmd.NewNonInteractiveClientConfig(
+			*clcfg, "", &clientcmd.ConfigOverrides{}, nil).ClientConfig()
+		if err != nil {
+			return clientset, errors.Wrap(err, "failed to get non-interactive client config")
+		}
+
+		// override host is needed to override kubeconfig kubernetes proxy host name
+		// to local proxy passed to API server run local proxy first by `make api-proxy`
+		if overrideHost != "" {
+			restcfg.Host = overrideHost
+		}
+	default:
+		return clientset, fmt.Errorf("unsupported client type %v", clientType)
 	}
 
 	return kubernetes.NewForConfig(restcfg)
@@ -98,7 +113,11 @@ func (t ProxyClient[A]) ExecuteMultiple(method, uri string, body []byte, params 
 
 // Delete is a method to make delete api call
 func (t ProxyClient[A]) Delete(uri, selector string, isContentExpected bool) error {
-	resp, err := t.baseExec(http.MethodDelete, uri, uri, nil, map[string]string{"selector": selector})
+	return t.ExecuteMethod(http.MethodDelete, uri, selector, isContentExpected)
+}
+
+func (t ProxyClient[A]) ExecuteMethod(method, uri string, selector string, isContentExpected bool) error {
+	resp, err := t.baseExec(method, uri, uri, nil, map[string]string{"selector": selector})
 	if err != nil {
 		return err
 	}
@@ -144,28 +163,97 @@ func (t ProxyClient[A]) GetLogs(uri string, logs chan output.Output) error {
 	return nil
 }
 
-// GetFile returns file artifact
-func (t ProxyClient[A]) GetFile(uri, fileName, destination string) (name string, err error) {
-	req, err := t.getProxy(http.MethodGet).
+// GetLogsV2 returns logs version 2 stream from log server, based on job pods logs
+func (t ProxyClient[A]) GetLogsV2(uri string, logs chan events.Log) error {
+	resp, err := t.getProxy(http.MethodGet).
 		Suffix(uri).
 		SetHeader("Accept", "text/event-stream").
 		Stream(context.Background())
 	if err != nil {
+		return err
+	}
+
+	go func() {
+		defer close(logs)
+		defer resp.Close()
+
+		StreamToLogsChannelV2(resp, logs)
+	}()
+
+	return nil
+}
+
+// GetTestWorkflowExecutionNotifications returns logs stream from job pods, based on job pods logs
+func (t ProxyClient[A]) GetTestWorkflowExecutionNotifications(uri string, notifications chan testkube.TestWorkflowExecutionNotification) error {
+	resp, err := t.getProxy(http.MethodGet).
+		Suffix(uri).
+		SetHeader("Accept", "text/event-stream").
+		Stream(context.Background())
+	if err != nil {
+		return err
+	}
+
+	go func() {
+		defer close(notifications)
+		defer resp.Close()
+
+		StreamToTestWorkflowExecutionNotificationsChannel(resp, notifications)
+	}()
+
+	return nil
+}
+
+// GetFile returns file artifact
+func (t ProxyClient[A]) GetFile(uri, fileName, destination string, params map[string][]string) (name string, err error) {
+	req := t.getProxy(http.MethodGet).
+		Suffix(uri).
+		SetHeader("Accept", "text/event-stream")
+
+	for key, values := range params {
+		for _, value := range values {
+			if value != "" {
+				req.Param(key, value)
+			}
+		}
+	}
+
+	stream, err := req.Stream(context.Background())
+	if err != nil {
 		return name, err
 	}
-	defer req.Close()
+	defer stream.Close()
 
-	f, err := os.Create(filepath.Join(destination, filepath.Base(fileName)))
+	target := filepath.Join(destination, fileName)
+	dir := filepath.Dir(target)
+	if _, err := os.Stat(dir); errors.Is(err, os.ErrNotExist) {
+		if err = os.MkdirAll(dir, os.ModePerm); err != nil {
+			return name, err
+		}
+	} else if err != nil {
+		return name, err
+	}
+
+	f, err := os.Create(target)
 	if err != nil {
 		return name, err
 	}
 
-	if _, err = f.ReadFrom(req); err != nil {
+	if _, err = f.ReadFrom(stream); err != nil {
 		return name, err
 	}
 
 	defer f.Close()
 	return f.Name(), err
+}
+
+// GetRawBody is a method to make an api call to return raw body
+func (t ProxyClient[A]) GetRawBody(method, uri string, body []byte, params map[string]string) (result []byte, err error) {
+	resp, err := t.baseExec(method, uri, fmt.Sprintf("%T", result), body, params)
+	if err != nil {
+		return result, err
+	}
+
+	return resp.Raw()
 }
 
 func (t ProxyClient[A]) getProxy(requestType string) *rest.Request {

@@ -19,13 +19,22 @@ type TestUpsertRequest struct {
 	Name string `json:"name,omitempty"`
 	// test namespace
 	Namespace string `json:"namespace,omitempty"`
+	// test description
+	Description string `json:"description,omitempty"`
 	// test type
 	Type_   string       `json:"type,omitempty"`
 	Content *TestContent `json:"content,omitempty"`
-	Created time.Time    `json:"created,omitempty"`
+	// reference to test source resource
+	Source  string    `json:"source,omitempty"`
+	Created time.Time `json:"created,omitempty"`
 	// test labels
 	Labels map[string]string `json:"labels,omitempty"`
 	// schedule to run test
-	Schedule  string              `json:"schedule,omitempty"`
-	Variables map[string]Variable `json:"variables,omitempty"`
+	Schedule string `json:"schedule,omitempty"`
+	// if test is offline and cannot be executed
+	ReadOnly bool `json:"readOnly,omitempty"`
+	// list of file paths that will be needed from uploads
+	Uploads          []string          `json:"uploads,omitempty"`
+	ExecutionRequest *ExecutionRequest `json:"executionRequest,omitempty"`
+	Status           *TestStatus       `json:"status,omitempty"`
 }

@@ -4,11 +4,12 @@ import (
 	"os"
 	"strings"
 
+	"github.com/spf13/cobra"
+
 	"github.com/kubeshop/testkube/cmd/kubectl-testkube/commands/common"
 	"github.com/kubeshop/testkube/cmd/kubectl-testkube/commands/common/render"
 	"github.com/kubeshop/testkube/cmd/kubectl-testkube/commands/testsuites/renderer"
 	"github.com/kubeshop/testkube/pkg/ui"
-	"github.com/spf13/cobra"
 )
 
 func NewTestSuiteExecutionCmd() *cobra.Command {
@@ -24,7 +25,8 @@ func NewTestSuiteExecutionCmd() *cobra.Command {
 		Short:   "Gets TestSuite Execution details",
 		Long:    `Gets TestSuite Execution details by ID, or list if id is not passed`,
 		Run: func(cmd *cobra.Command, args []string) {
-			client, _ := common.GetClient(cmd)
+			client, _, err := common.GetClient(cmd)
+			ui.ExitOnError("getting client", err)
 
 			if len(args) > 0 {
 				executionID := args[0]
@@ -32,11 +34,12 @@ func NewTestSuiteExecutionCmd() *cobra.Command {
 				ui.ExitOnError("getting recent test suite execution data id:"+execution.Id, err)
 				err = render.Obj(cmd, execution, os.Stdout, renderer.TestSuiteExecutionRenderer)
 				ui.ExitOnError("rendering obj", err)
-				uiShellTestSuiteGetCommandBlock(execution.Id)
 			} else {
-				client, _ := common.GetClient(cmd)
+				client, _, err := common.GetClient(cmd)
+				ui.ExitOnError("getting client", err)
 
-				executions, err := client.ListTestSuiteExecutions(testSuiteName, limit, strings.Join(selectors, ","))
+				executions, err := client.ListTestSuiteExecutions(testSuiteName, limit,
+					strings.Join(selectors, ","))
 				ui.ExitOnError("getting test suites executions list", err)
 				err = render.List(cmd, executions, os.Stdout)
 				ui.ExitOnError("rendering list", err)

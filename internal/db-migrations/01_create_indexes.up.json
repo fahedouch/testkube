@@ -1,0 +1,60 @@
+[
+  {
+    "createIndexes": "testresults",
+    "indexes": [
+      {
+        "key": {"id": 1},
+        "name": "id_1"
+      },
+      {
+        "key": {"testsuite.name": 1},
+        "name": "testsuite.name_1"
+      },
+      {
+        "key": {"name": 1},
+        "name": "name_1"
+      },
+      {
+        "key": {"status": 1},
+        "name": "status_1"
+      },
+      {
+        "key": {"starttime": -1},
+        "name": "starttime_-1"
+      },
+      {
+        "key": {"endtime": -1},
+        "name": "endtime_-1"
+      }
+    ]
+  },
+  {
+    "createIndexes": "results",
+    "indexes": [
+      {
+        "key": {"id": 1},
+        "name": "id_1"
+      },
+      {
+        "key": {"testname": 1},
+        "name": "testname_1"
+      },
+      {
+        "key": {"name": 1},
+        "name": "name_1"
+      },
+      {
+        "key": {"executionresult.status": 1},
+        "name": "executionresult.status_1"
+      },
+      {
+        "key": {"starttime": -1},
+        "name": "starttime_-1"
+      },
+      {
+        "key": {"endtime": -1},
+        "name": "endtime_-1"
+      }
+    ]
+  }
+]

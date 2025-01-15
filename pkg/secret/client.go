@@ -4,20 +4,33 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/kubeshop/testkube/pkg/k8sclient"
-	"github.com/kubeshop/testkube/pkg/log"
 	"go.uber.org/zap"
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	corev1 "k8s.io/client-go/applyconfigurations/core/v1"
 	"k8s.io/client-go/kubernetes"
+
+	"github.com/kubeshop/testkube/pkg/k8sclient"
+	"github.com/kubeshop/testkube/pkg/log"
 )
 
 const testkubeTestSecretLabel = "tests-secrets"
 
+//go:generate mockgen -destination=./mock_client.go -package=secret "github.com/kubeshop/testkube/pkg/secret" Interface
+type Interface interface {
+	Get(id string, namespace ...string) (map[string]string, error)
+	GetObject(id string) (*v1.Secret, error)
+	List(all bool, namespace string) (map[string]map[string]string, error)
+	Create(id string, labels, stringData map[string]string, namespace ...string) error
+	Apply(id string, labels, stringData map[string]string) error
+	Update(id string, labels, stringData map[string]string) error
+	Delete(id string) error
+	DeleteAll(selector string) error
+}
+
 // Client provide methods to manage secrets
 type Client struct {
-	ClientSet *kubernetes.Clientset
+	ClientSet kubernetes.Interface
 	Log       *zap.SugaredLogger
 	Namespace string
 }
@@ -28,17 +41,26 @@ func NewClient(namespace string) (*Client, error) {
 	if err != nil {
 		return nil, err
 	}
+	return NewClientFor(clientSet, namespace), nil
+}
 
+// NewClientFor is a method to create new secret client using existing clientSet
+func NewClientFor(clientSet kubernetes.Interface, namespace string) *Client {
 	return &Client{
 		ClientSet: clientSet,
 		Log:       log.DefaultLogger,
 		Namespace: namespace,
-	}, nil
+	}
 }
 
 // Get is a method to retrieve an existing secret
-func (c *Client) Get(id string) (map[string]string, error) {
-	secretsClient := c.ClientSet.CoreV1().Secrets(c.Namespace)
+func (c *Client) Get(id string, namespace ...string) (map[string]string, error) {
+	ns := c.Namespace
+	if len(namespace) != 0 {
+		ns = namespace[0]
+	}
+
+	secretsClient := c.ClientSet.CoreV1().Secrets(ns)
 	ctx := context.Background()
 
 	secretSpec, err := secretsClient.Get(ctx, id, metav1.GetOptions{})
@@ -54,13 +76,35 @@ func (c *Client) Get(id string) (map[string]string, error) {
 	return stringData, nil
 }
 
-// List is a method to retrieve all existing secrets
-func (c *Client) List() (map[string]map[string]string, error) {
+// GetObject is a method to retrieve an existing secret object
+func (c *Client) GetObject(id string) (*v1.Secret, error) {
 	secretsClient := c.ClientSet.CoreV1().Secrets(c.Namespace)
 	ctx := context.Background()
 
+	secretSpec, err := secretsClient.Get(ctx, id, metav1.GetOptions{})
+	if err != nil {
+		return nil, err
+	}
+
+	return secretSpec, nil
+}
+
+// List is a method to retrieve all existing secrets
+func (c *Client) List(all bool, namespace string) (map[string]map[string]string, error) {
+	if namespace == "" {
+		namespace = c.Namespace
+	}
+
+	secretsClient := c.ClientSet.CoreV1().Secrets(namespace)
+	ctx := context.Background()
+
+	selector := ""
+	if !all {
+		selector = fmt.Sprintf("createdBy=testkube")
+	}
+
 	secretList, err := secretsClient.List(ctx, metav1.ListOptions{
-		LabelSelector: fmt.Sprintf("testkube=%s", testkubeTestSecretLabel)})
+		LabelSelector: selector})
 	if err != nil {
 		return nil, err
 	}
@@ -79,11 +123,16 @@ func (c *Client) List() (map[string]map[string]string, error) {
 }
 
 // Create is a method to create new secret
-func (c *Client) Create(id string, labels, stringData map[string]string) error {
-	secretsClient := c.ClientSet.CoreV1().Secrets(c.Namespace)
+func (c *Client) Create(id string, labels, stringData map[string]string, namespace ...string) error {
+	ns := c.Namespace
+	if len(namespace) != 0 {
+		ns = namespace[0]
+	}
+
+	secretsClient := c.ClientSet.CoreV1().Secrets(ns)
 	ctx := context.Background()
 
-	secretSpec := NewSpec(id, c.Namespace, labels, stringData)
+	secretSpec := NewSpec(id, ns, labels, stringData)
 	if _, err := secretsClient.Create(ctx, secretSpec, metav1.CreateOptions{}); err != nil {
 		return err
 	}
@@ -154,7 +203,7 @@ func NewSpec(id, namespace string, labels, stringData map[string]string) *v1.Sec
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      id,
 			Namespace: namespace,
-			Labels:    map[string]string{"testkube": testkubeTestSecretLabel},
+			Labels:    map[string]string{"testkube": testkubeTestSecretLabel, "createdBy": "testkube"},
 		},
 		Type:       v1.SecretTypeOpaque,
 		StringData: stringData,

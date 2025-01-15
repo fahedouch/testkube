@@ -2,23 +2,46 @@ package config
 
 import (
 	"encoding/json"
-	"io/ioutil"
 	"os"
 	"path"
+)
 
-	"github.com/kubeshop/testkube/pkg/oauth"
+const (
+	APIServerName                    string = "testkube-api-server"
+	APIServerPort                    int    = 8088
+	DashboardName                    string = "testkube-dashboard"
+	DashboardPort                    int    = 8080
+	EnterpriseUiName                 string = "testkube-enterprise-ui"
+	EnterpriseUiPort                 int    = 8080
+	EnterpriseApiName                string = "testkube-enterprise-api"
+	EnterpriseApiPort                int    = 8088
+	EnterpriseApiForwardingPort      int    = 8090
+	EnterpriseDexName                string = "testkube-enterprise-dex"
+	EnterpriseDexPort                int    = 5556
+	EnterpriseDexForwardingPort      int    = 5556
+	EnterpriseMinioName              string = "testkube-enterprise-minio"
+	EnterpriseMinioPort              int    = 9000
+	EnterpriseMinioPortFrwardingPort int    = 9000
+
+	configDirName = ".testkube"
+	configFile    = "config.json"
 )
 
 var DefaultConfig = Data{
-	AnalyticsEnabled: true,
+	TelemetryEnabled: true,
 	Namespace:        "testkube",
-	OAuth2Data: OAuth2Data{
-		Provider: oauth.GithubProviderType,
-	},
+	APIURI:           "http://localhost:8088",
+	APIServerName:    APIServerName,
+	APIServerPort:    APIServerPort,
+	DashboardName:    DashboardName,
+	DashboardPort:    DashboardPort,
 }
 
-const configDirName = ".testkube"
-const configFile = "config.json"
+func GetStorage(dir string) (Storage, error) {
+	storage := Storage{Dir: dir}
+	err := storage.Init()
+	return storage, err
+}
 
 type Storage struct {
 	Dir string
@@ -29,7 +52,7 @@ func (c *Storage) Load() (data Data, err error) {
 	if err != nil {
 		return data, err
 	}
-	d, err := ioutil.ReadFile(path)
+	d, err := os.ReadFile(path)
 	if err != nil {
 		return data, err
 	}
@@ -46,7 +69,7 @@ func (c *Storage) Save(data Data) error {
 	if err != nil {
 		return err
 	}
-	return ioutil.WriteFile(path, d, 0700)
+	return os.WriteFile(path, d, 0700)
 }
 
 func (c *Storage) Init() error {

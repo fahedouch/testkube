@@ -1,10 +1,10 @@
 package commands
 
 import (
-	"github.com/kubeshop/testkube/cmd/kubectl-testkube/commands/analytics"
-	"github.com/kubeshop/testkube/cmd/kubectl-testkube/commands/oauth"
-	"github.com/kubeshop/testkube/pkg/ui"
 	"github.com/spf13/cobra"
+
+	"github.com/kubeshop/testkube/cmd/kubectl-testkube/commands/telemetry"
+	"github.com/kubeshop/testkube/pkg/ui"
 )
 
 func NewEnableCmd() *cobra.Command {
@@ -18,8 +18,7 @@ func NewEnableCmd() *cobra.Command {
 		},
 	}
 
-	cmd.AddCommand(analytics.NewEnableAnalyticsCmd())
-	cmd.AddCommand(oauth.NewEnableOAuthCmd())
+	cmd.AddCommand(telemetry.NewEnableTelemetryCmd())
 
 	return cmd
 }

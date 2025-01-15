@@ -13,7 +13,7 @@ type TableData interface {
 
 func (ui *UI) Table(tableData TableData, writer io.Writer) {
 	table := tablewriter.NewWriter(writer)
-	table.SetBorder(false)
+	table.EnableBorder(false)
 	table.SetHeaderLine(true)
 
 	table.SetHeaderAlignment(tablewriter.ALIGN_LEFT)
@@ -36,6 +36,11 @@ func (ui *UI) JSONTable(tableData TableData, writer io.Writer) error {
 
 func (ui *UI) NewArrayTable(a [][]string) ArrayTable {
 	return ArrayTable(a)
+}
+
+func (ui *UI) PrintArrayTable(a [][]string) {
+	t := ui.NewArrayTable(a)
+	ui.Table(t, ui.Writer)
 }
 
 type ArrayTable [][]string

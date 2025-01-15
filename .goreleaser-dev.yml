@@ -1,3 +1,4 @@
+version: 2
 builds:
   - builder: prebuilt
     goos:
@@ -11,17 +12,35 @@ builds:
     goamd64:
       - v1
     prebuilt:
-      path: '{{ .Os }}/testkube_{{ .Os }}_{{ .Arch }}{{ with .Amd64 }}_{{ . }}{{ end }}/kubectl-testkube{{ .Ext }}'
+      path: "{{ .Os }}/testkube_{{ .Os }}_{{ .Arch }}{{ with .Amd64 }}_{{ . }}{{ end }}/kubectl-testkube{{ .Ext }}"
     binary: kubectl-testkube
 archives:
-  - replacements:
-      darwin: macOS
-      linux: Linux
-      windows: Windows
-      386: i386
-      amd64: x86_64
+  - id: testkube
+    name_template: >-
+      {{ .ProjectName }}_{{.Version}}_
+      {{- title .Os }}_
+      {{- if eq .Arch "amd64" }}x86_64
+      {{- else if eq .Arch "386" }}i386
+      {{- else }}{{ .Arch }}{{ end }}
 checksum:
   name_template: "checksums.txt"
+
+sboms:
+  - artifacts: archive
+  - id: source 
+    artifacts: source
+
+signs:
+  - cmd: cosign
+    certificate: '${artifact}.pem'
+    args:
+      - sign-blob
+      - '--output-certificate=${certificate}'
+      - '--output-signature=${signature}'
+      - '${artifact}'
+      - "--yes"
+    artifacts: all
+    output: true
 changelog:
   sort: asc
   filters:
@@ -37,12 +56,20 @@ release:
   prerelease: auto
 
 brews:
-  - tap:
+  - repository:
       owner: kubeshop
       name: homebrew-testkube-dev
     description: Testkube - your somewhat opinionated and friendly Kubernetes testing framework!
     homepage: https://testkube.io
     license: "MIT"
+    dependencies:
+      - name: helm
+      - name: kubectl
+    install: |
+      bin.install "kubectl-testkube"
+      ln_s bin/"kubectl-testkube", bin/"tk"
+      ln_s bin/"kubectl-testkube", bin/"testkube"
+
 nfpms:
   - maintainer: Testkube team
     license: "MIT"

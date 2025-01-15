@@ -9,9 +9,3 @@ import (
 var Verbose = false
 
 var Writer io.Writer = os.Stdout
-
-// IconMedal emoji
-const IconMedal = "🥇"
-
-// IconError emoji
-const IconError = "💔"

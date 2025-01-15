@@ -3,9 +3,10 @@ package webhooks
 import (
 	"strings"
 
+	"github.com/spf13/cobra"
+
 	"github.com/kubeshop/testkube/cmd/kubectl-testkube/commands/common"
 	"github.com/kubeshop/testkube/pkg/ui"
-	"github.com/spf13/cobra"
 )
 
 func NewDeleteWebhookCmd() *cobra.Command {
@@ -19,7 +20,9 @@ func NewDeleteWebhookCmd() *cobra.Command {
 		Short:   "Delete webhook",
 		Long:    `Delete webhook, pass webhook name which should be deleted`,
 		Run: func(cmd *cobra.Command, args []string) {
-			client, _ := common.GetClient(cmd)
+			client, _, err := common.GetClient(cmd)
+			ui.ExitOnError("getting client", err)
+
 			if len(args) > 0 {
 				name = args[0]
 				err := client.DeleteWebhook(name)
